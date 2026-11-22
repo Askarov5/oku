@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oku.local/schemas/block-ast.json",
+  "title": "PageExtractedJson",
+  "description": "One reviewed textbook page: continuous Markdown interrupted only by components.",
+  "type": "object",
+  "required": [
+    "pageNumber",
+    "printedPage",
+    "continuesFromPrevious",
+    "blocks",
+    "warnings",
+    "model",
+    "extractedAt"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "pageNumber": {
+      "description": "Position in the source PDF, 1-based.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "printedPage": {
+      "description": "The number printed on the page, as printed; null when there is none.",
+      "type": ["string", "null"]
+    },
+    "continuesFromPrevious": {
+      "description": "True when the page opens in the middle of a paragraph begun on the previous page.",
+      "type": "boolean"
+    },
+    "blocks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/pageBlock" }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "model": { "type": "string" },
+    "extractedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "blockId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "bbox": {
+      "type": "object",
+      "required": ["x", "y", "w", "h"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y": { "type": "number", "minimum": 0, "maximum": 1 },
+        "w": { "type": "number", "minimum": 0, "maximum": 1 },
+        "h": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "pageBlock": {
+      "oneOf": [
+        { "$ref": "#/$defs/markdown" },
+        { "$ref": "#/$defs/image" },
+        { "$ref": "#/$defs/unitHeader" }
+      ]
+    },
+    "unitBlock": {
+      "oneOf": [
+        { "$ref": "#/$defs/markdown" },
+        { "$ref": "#/$defs/image" },
+        { "$ref": "#/$defs/pageAnchor" }
+      ]
+    },
+    "markdown": {
+      "description": "Continuous prose. Headings, lists and tables stay inside the Markdown.",
+      "type": "object",
+      "required": ["id", "type", "markdown"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/blockId" },
+        "type": { "const": "markdown" },
+        "markdown": { "type": "string" }
+      }
+    },
+    "image": {
+      "type": "object",
+      "required": ["id", "type", "url", "alt", "ai_description"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/blockId" },
+        "type": { "const": "image" },
+        "url": { "type": "string" },
+        "alt": { "type": "string" },
+        "ai_description": { "type": "string" },
+        "caption": { "type": ["string", "null"] },
+        "bbox": {
+          "oneOf": [{ "$ref": "#/$defs/bbox" }, { "type": "null" }]
+        }
+      }
+    },
+    "unitHeader": {
+      "description": "A new unit starts here. The title becomes the unit header, not body content.",
+      "type": "object",
+      "required": ["id", "type", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/blockId" },
+        "type": { "const": "unit_header" },
+        "title": { "type": "string" }
+      }
+    },
+    "pageAnchor": {
+      "description": "Where a textbook page starts inside a unit body.",
+      "type": "object",
+      "required": ["id", "type", "pageNumber", "label", "midParagraph"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/blockId" },
+        "type": { "const": "page_anchor" },
+        "pageNumber": { "type": "integer", "minimum": 1 },
+        "label": { "type": ["string", "null"] },
+        "midParagraph": { "type": "boolean" }
+      }
+    },
+    "unitHeaderData": {
+      "type": "object",
+      "required": [
+        "title",
+        "pageStart",
+        "pageEnd",
+        "pageStartLabel",
+        "pageEndLabel"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "pageStart": { "type": "integer", "minimum": 1 },
+        "pageEnd": { "type": "integer", "minimum": 1 },
+        "pageStartLabel": { "type": ["string", "null"] },
+        "pageEndLabel": { "type": ["string", "null"] }
+      }
+    },
+    "unit": {
+      "description": "A published unit: its header is kept apart from its body.",
+      "type": "object",
+      "required": ["header", "body"],
+      "additionalProperties": false,
+      "properties": {
+        "header": { "$ref": "#/$defs/unitHeaderData" },
+        "body": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/unitBlock" }
+        }
+      }
+    }
+  }
+}

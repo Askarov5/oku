@@ -1,0 +1,19 @@
+{
+  "name": "oku",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "turbo run dev --filter=@oku/web --filter=@oku/shared-types --filter=@oku/db",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "db:generate": "pnpm --filter @oku/db generate",
+    "db:migrate": "pnpm --filter @oku/db migrate",
+    "db:seed": "pnpm --filter @oku/db seed"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  }
+}

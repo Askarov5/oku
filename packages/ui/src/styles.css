@@ -1,0 +1,146 @@
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surfaces */
+  --bg-canvas: #f5f1e8;
+  --bg-surface: #fffdf9;
+  --bg-hover: #ece6d8;
+  --bg-rail: #1d3557;
+  --rail-hover: #2c4a75;
+  --rail-line: #7389b0;
+
+  /* Lines */
+  --border-hairline: #d6cfc2;
+  --border-control: #8a8375;
+
+  /* Ink */
+  --text-primary: #1f2937;
+  --text-secondary: #57534e;
+  --text-on-rail: #f5f1e8;
+  --text-on-rail-muted: #b9c6dd;
+
+  /* Vermilion: action fill, the 4px rule, and focus. --accent-ink is vermilion as text. */
+  --accent-primary: #c84b31;
+  --accent-primary-hover: #b03e26;
+  --accent-ink: #b03e26;
+  --on-accent: #fffdf9;
+  --focus-ring: #c84b31;
+
+  /* Cobalt: secondary fill and selection. */
+  --accent-secondary: #1d3557;
+  --accent-secondary-hover: #152843;
+  --on-accent-secondary: #f5f1e8;
+
+  /* Ingestion status. Grade greens, teals, and ambers stay reserved for the 5-point scale. */
+  --status-pending: #57534e;
+  --status-pending-line: #d6cfc2;
+  --status-extracted: #1d3557;
+  --status-reviewed-fill: #1d3557;
+  --status-reviewed-on: #f5f1e8;
+  --status-failed: #b03e26;
+
+  --rounded-xs: 4px;
+  --rounded-sm: 6px;
+  --rounded-md: 8px;
+  --font-sans: "Golos Text", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-canvas: #12161c;
+  --bg-surface: #1a2029;
+  --bg-hover: #232b37;
+  --bg-rail: #152843;
+  --rail-hover: #223d63;
+  --rail-line: #6880a8;
+
+  --border-hairline: #2b3442;
+  --border-control: #6b7688;
+
+  --text-primary: #f5f1e8;
+  --text-secondary: #9ca3af;
+  --text-on-rail: #f5f1e8;
+  --text-on-rail-muted: #b9c6dd;
+
+  --accent-primary: #e05d44;
+  --accent-primary-hover: #eb7862;
+  --accent-ink: #e05d44;
+  --on-accent: #12161c;
+  --focus-ring: #e05d44;
+
+  --accent-secondary: #2a4a7f;
+  --accent-secondary-hover: #33578f;
+  --on-accent-secondary: #f5f1e8;
+
+  --status-pending: #9ca3af;
+  --status-pending-line: #2b3442;
+  --status-extracted: #a9c1ec;
+  --status-reviewed-fill: #2a4a7f;
+  --status-reviewed-on: #f5f1e8;
+  --status-failed: #e05d44;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Keep the scrollbar gutter so the page does not shift when the drawer locks scrolling. */
+html {
+  scrollbar-gutter: stable;
+}
+
+@keyframes oku-drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  accent-color: var(--accent-primary);
+  caret-color: var(--accent-primary);
+}
+
+/*
+ * Browser surfaces. The :root prefix lifts these above Tailwind's preflight,
+ * which loads after this file and would otherwise reset placeholder color.
+ */
+:root ::placeholder {
+  color: var(--text-secondary);
+  opacity: 1;
+}
+
+:root ::selection {
+  background: var(--accent-secondary);
+  color: var(--on-accent-secondary);
+}
+
+:root :focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* On cobalt, vermilion falls under 3:1, so focus and selection switch inks. */
+[data-surface="rail"] {
+  --focus-ring: var(--text-on-rail);
+}
+
+:root [data-surface="rail"] ::placeholder {
+  color: var(--text-on-rail-muted);
+}
+
+:root [data-surface="rail"] ::selection {
+  background: var(--accent-primary);
+  color: var(--on-accent);
+}

@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: oku-postgres
+    environment:
+      POSTGRES_USER: oku
+      POSTGRES_PASSWORD: oku
+      POSTGRES_DB: oku
+    ports:
+      - "5432:5432"
+    volumes:
+      - oku_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oku -d oku"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Optional: run the worker in Docker after building.
+  # Local default is STORAGE_DRIVER=local + uvicorn on the host.
+  ai-worker:
+    profiles: ["worker"]
+    build:
+      context: ./services/ai-worker
+      dockerfile: Dockerfile
+    container_name: oku-ai-worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://oku:oku@postgres:5432/oku
+      STORAGE_DRIVER: local
+      LOCAL_STORAGE_DIR: /data/r2-local
+      MOCK_LLM: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./services/ai-worker:/app
+      - ./.r2-local:/data/r2-local
+
+volumes:
+  oku_pg_data:
