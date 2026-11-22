@@ -4,7 +4,13 @@ export * from "./units.js";
 
 export type BookLanguage = "ky" | "ru";
 export type BookStatus = "draft" | "review" | "published";
-export type BookPageStatus = "pending" | "extracted" | "reviewed" | "failed";
+export type BookPageStatus =
+  | "pending"
+  | "extracted"
+  | "reviewed"
+  | "failed"
+  /** Kept on the book from the original PDF; not sent to AI yet. */
+  | "stored";
 export type IngestionJobStatus = "queued" | "running" | "completed" | "failed";
 
 export interface CountryConfig {

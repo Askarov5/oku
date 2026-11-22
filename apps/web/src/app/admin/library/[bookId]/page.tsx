@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Notice, StatusPill } from "@oku/ui";
+import { Button, ChevronLeftIcon, Notice, RefreshIcon, StatusPill } from "@oku/ui";
 import type { NoticeState } from "@oku/ui";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -9,27 +9,18 @@ import { useState } from "react";
 import { AdminGate } from "@/components/admin-gate";
 import { BookCover } from "@/components/book-cover";
 import { pageRef, unitHref, useBookOutline } from "@/lib/book-outline";
+import { shelfLine } from "@/lib/catalog";
 import { pageLabel, pageRangeLabel } from "@/lib/page-label";
 import { useBookDetail } from "@/lib/use-book-detail";
 
 const LOAD_FAILED: NoticeState = { text: "Failed to load book", tone: "error" };
-
-const languageName = (language: string): string => {
-  if (language === "ky") return "Kyrgyz";
-  if (language === "ru") return "Russian";
-  return language.toUpperCase();
-};
-
-const subjectName = (subject: string): string =>
-  subject === "political_geography"
-    ? "Political geography"
-    : subject.replaceAll("_", " ");
 
 const pageStatusName = (status: string): string => {
   if (status === "extracted") return "Needs review";
   if (status === "reviewed") return "Reviewed";
   if (status === "failed") return "Failed";
   if (status === "pending") return "Waiting";
+  if (status === "stored") return "Saved";
   return status;
 };
 
@@ -102,14 +93,16 @@ const BookDetailPage = (): ReactElement => {
     await refresh();
   };
 
-  const reviewedCount = data
-    ? data.pages.filter((page) => page.status === "reviewed").length
-    : 0;
-  const allReviewed =
-    !!data && data.pages.length > 0 && reviewedCount === data.pages.length;
-  const openPages = data
-    ? data.pages.filter((page) => page.status !== "reviewed")
+  // Saved-only pages stay on the book; review and publish count digitized ones.
+  const pipelinePages = data
+    ? data.pages.filter((page) => page.status !== "stored")
     : [];
+  const reviewedCount = pipelinePages.filter(
+    (page) => page.status === "reviewed",
+  ).length;
+  const allReviewed =
+    pipelinePages.length > 0 && reviewedCount === pipelinePages.length;
+  const openPages = pipelinePages.filter((page) => page.status !== "reviewed");
   const showingOpen = pageFilter === "open" && openPages.length > 0;
   const visiblePages = data ? (showingOpen ? openPages : data.pages) : [];
   const attentionJobs = data
@@ -144,9 +137,10 @@ const BookDetailPage = (): ReactElement => {
             <div className="min-w-0">
               <Link
                 href="/admin/library"
-                className="text-sm text-[var(--text-secondary)] hover:text-[var(--accent-ink)] coarse:inline-flex coarse:min-h-[44px] coarse:items-center"
+                className="inline-flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--accent-ink)] coarse:min-h-[44px]"
               >
-                ← Library
+                <ChevronLeftIcon />
+                Library
               </Link>
               <div className="mt-2 flex items-start gap-4 coarse:mt-0">
                 <BookCover
@@ -162,9 +156,13 @@ const BookDetailPage = (): ReactElement => {
                     {data.book.title}
                   </h2>
                   <p className="mt-1 font-mono text-xs text-[var(--text-secondary)]">
-                    {languageName(data.book.language)} ·{" "}
-                    {subjectName(data.book.subject)}
+                    {shelfLine(data.book)}
                   </p>
+                  {data.book.authors.length > 0 ? (
+                    <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                      {data.book.authors.join(", ")}
+                    </p>
+                  ) : null}
                   {/* The uploaded file, unchanged. */}
                   <a
                     href={data.book.sourcePdfUrl}
@@ -183,8 +181,14 @@ const BookDetailPage = (): ReactElement => {
                   status={data.book.status}
                   label={bookStatusName(data.book.status)}
                 />
-                <Button variant="ghost" onClick={() => void refresh()}>
-                  Refresh
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Refresh"
+                  title="Refresh"
+                  onClick={() => void refresh()}
+                >
+                  <RefreshIcon />
                 </Button>
                 {confirmPublish ? (
                   <>
@@ -216,7 +220,11 @@ const BookDetailPage = (): ReactElement => {
                   id="publish-gate"
                   className="font-mono text-xs tabular-nums text-[var(--text-secondary)]"
                 >
-                  {reviewedCount} of {data.pages.length} pages reviewed
+                  {reviewedCount} of {pipelinePages.length} digitized pages
+                  reviewed
+                  {data.pages.length > pipelinePages.length
+                    ? ` · ${data.pages.length - pipelinePages.length} saved only`
+                    : ""}
                 </p>
               )}
             </div>
@@ -303,7 +311,8 @@ const BookDetailPage = (): ReactElement => {
                 ) : null}
               </div>
               <p className="font-mono text-xs tabular-nums text-[var(--text-secondary)]">
-                {reviewedCount}/{data.pages.length} reviewed
+                {reviewedCount}/{pipelinePages.length || data.pages.length}{" "}
+                reviewed
               </p>
             </div>
             {data.pages.length === 0 ? (
@@ -335,7 +344,7 @@ const BookDetailPage = (): ReactElement => {
                           <StatusPill status={page.status} label={statusName} />
                         </span>
                       </div>
-                      {page.status === "failed" ? (
+                      {page.status === "failed" || page.status === "stored" ? (
                         <Button
                           className="relative z-10 w-full"
                           variant="ghost"
@@ -343,7 +352,7 @@ const BookDetailPage = (): ReactElement => {
                           disabled={busy}
                           onClick={() => void retryPage(page.pageNumber)}
                         >
-                          Retry
+                          {page.status === "stored" ? "Digitize" : "Retry"}
                         </Button>
                       ) : null}
                     </li>

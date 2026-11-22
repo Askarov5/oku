@@ -5,6 +5,7 @@ export type StatusTone =
   | "extracted"
   | "reviewed"
   | "failed"
+  | "stored"
   | "queued"
   | "running"
   | "completed"
@@ -46,6 +47,7 @@ const toneGroup: Record<StatusTone, StatusGroup> = {
   pending: "waiting",
   queued: "waiting",
   draft: "waiting",
+  stored: "waiting",
   extracted: "active",
   running: "active",
   review: "active",

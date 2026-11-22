@@ -15,6 +15,11 @@ export {
   ChevronUpIcon,
   CloseIcon,
   MenuIcon,
+  MoonIcon,
+  PencilIcon,
+  RefreshIcon,
+  SunIcon,
+  TrashIcon,
 } from "./icons";
 export type { IconProps } from "./icons";
 export { Notice } from "./notice";

@@ -29,15 +29,16 @@ const loadPdfJs = (): Promise<PdfJs> => {
   return pdfJs;
 };
 
-/** Opens a PDF file. Rejects when the file is not a readable PDF. */
-export const openPdf = async (file: File): Promise<OpenedPdf> => {
+const openFromData = async (
+  data: Uint8Array,
+  onClose?: () => void,
+): Promise<OpenedPdf> => {
   const { getDocument } = await loadPdfJs();
-  // A blob URL lets pdf.js read the file without a second copy of it in memory.
-  const url = URL.createObjectURL(file);
-  const task = getDocument({ url });
+  // Pass a copy: pdf.js transfers the buffer to its worker and clears the original.
+  const task = getDocument({ data: data.slice() });
   const close = (): void => {
     void task.destroy();
-    URL.revokeObjectURL(url);
+    onClose?.();
   };
 
   try {
@@ -47,6 +48,25 @@ export const openPdf = async (file: File): Promise<OpenedPdf> => {
     close();
     throw error;
   }
+};
+
+/** Opens a PDF file. Rejects when the file is not a readable PDF. */
+export const openPdf = async (file: File): Promise<OpenedPdf> => {
+  const data = new Uint8Array(await file.arrayBuffer());
+  return openFromData(data);
+};
+
+/**
+ * Opens a PDF already served at a URL (e.g. `/api/media/.../source.pdf`).
+ * Fetches the whole file first: our media route does not support HTTP range
+ * requests, and pdf.js needs those when given a URL, which left pages blank.
+ */
+export const openPdfUrl = async (url: string): Promise<OpenedPdf> => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch PDF (${response.status})`);
+  }
+  return openFromData(new Uint8Array(await response.arrayBuffer()));
 };
 
 /** Draws one page (1-based) onto a new canvas `width` pixels wide. */

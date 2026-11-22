@@ -16,7 +16,7 @@ describe("coverExtension", () => {
 
 describe("bookStoragePrefix", () => {
   it("keeps a book's files under one folder", () => {
-    expect(bookStoragePrefix("abc")).toBe("books/kg/9/political_geography/abc");
+    expect(bookStoragePrefix("abc")).toBe("books/kg/abc");
   });
 });
 

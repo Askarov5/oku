@@ -1,10 +1,11 @@
 "use client";
 
-import type { Book, BookPage, IngestionJob, Unit } from "@oku/db";
+import type { BookPage, IngestionJob, Unit } from "@oku/db";
+import type { LibraryBook } from "./catalog";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 export interface BookDetail {
-  book: Book;
+  book: LibraryBook;
   pages: BookPage[];
   jobs: IngestionJob[];
   units: Unit[];
@@ -42,6 +43,18 @@ const EMPTY: BookDetailState = { data: null, failed: false };
  * the book screen read the same copy and only one request is ever in flight.
  */
 const entries = new Map<string, Entry>();
+
+/** Drops a book's cached detail after it is deleted from the library. */
+export const forgetBookDetail = (bookId: string): void => {
+  const entry = entries.get(bookId);
+  if (!entry) {
+    return;
+  }
+  if (entry.timer) {
+    clearInterval(entry.timer);
+  }
+  entries.delete(bookId);
+};
 
 const entryFor = (bookId: string): Entry => {
   const existing = entries.get(bookId);

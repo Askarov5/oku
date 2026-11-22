@@ -3,6 +3,32 @@ import { bookPages, books, units } from "@oku/db";
 import { asc, eq } from "drizzle-orm";
 import { getDb } from "./db";
 
+/**
+ * Digitized pages that must be reviewed before publish. Saved-only originals
+ * stay on the book and are skipped until they are digitized.
+ */
+export const publishPipeline = <T extends { status: string }>(
+  pages: T[],
+): T[] => pages.filter((page) => page.status !== "stored");
+
+/** Why a book cannot be published yet, or null when every digitized page is reviewed. */
+export const publishBlocker = (
+  pages: Array<{ status: string }>,
+): string | null => {
+  if (pages.length === 0) {
+    return "book has no pages";
+  }
+  const pipeline = publishPipeline(pages);
+  if (pipeline.length === 0) {
+    return "digitize at least one page before publish";
+  }
+  const unfinished = pipeline.filter((page) => page.status !== "reviewed");
+  if (unfinished.length > 0) {
+    return `all digitized pages must be reviewed before publish (${unfinished.length} remaining)`;
+  }
+  return null;
+};
+
 export const publishBook = async (bookId: string): Promise<{ unitCount: number }> => {
   const db = getDb();
   const [book] = await db
@@ -21,20 +47,16 @@ export const publishBook = async (bookId: string): Promise<{ unitCount: number }
     .where(eq(bookPages.bookId, bookId))
     .orderBy(asc(bookPages.pageNumber));
 
-  if (pages.length === 0) {
-    throw new Error("book has no pages");
+  const blocked = publishBlocker(pages);
+  if (blocked) {
+    throw new Error(blocked);
   }
 
-  const unfinished = pages.filter((page) => page.status !== "reviewed");
-  if (unfinished.length > 0) {
-    throw new Error(
-      `all pages must be reviewed before publish (${unfinished.length} remaining)`,
-    );
-  }
+  const pipeline = publishPipeline(pages);
 
   // Content before the first unit header is published under the book title.
   const drafts = buildUnits(
-    pages.map((page) => PageExtractedJsonSchema.parse(page.extractedJson)),
+    pipeline.map((page) => PageExtractedJsonSchema.parse(page.extractedJson)),
     book.title,
   );
 

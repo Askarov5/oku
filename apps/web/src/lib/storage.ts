@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import { getEnv } from "./env";
 import { publicObjectUrl, uploadObject as uploadR2Object } from "./r2";
@@ -30,6 +30,15 @@ export const readLocalObject = async (key: string): Promise<Buffer | null> => {
   } catch {
     return null;
   }
+};
+
+/** Removes every object under a key prefix. Local only; R2 cleanup is best-effort later. */
+export const deletePrefix = async (prefix: string): Promise<void> => {
+  if (!isLocalStorage()) {
+    return;
+  }
+  const fullPath = path.join(localRoot(), prefix);
+  await rm(fullPath, { recursive: true, force: true });
 };
 
 export const mediaPublicUrl = (key: string): string => {
