@@ -1,7 +1,8 @@
 "use client";
 
 import { mergeAdjacentMarkdown } from "@oku/shared-types";
-import type { PageBlock, PageExtractedJson } from "@oku/shared-types";
+import { headingLevel } from "@oku/shared-types";
+import type { HeadingLevel, PageBlock, PageExtractedJson, TableBlock } from "@oku/shared-types";
 import {
   Button,
   Card,
@@ -18,6 +19,9 @@ import type { NoticeState } from "@oku/ui";
 import Link from "next/link";
 import type { ReactElement } from "react";
 import { useRef, useState } from "react";
+import { RichText } from "@/components/rich-text";
+import { TableView } from "@/components/table-view";
+import { modelLabel } from "@/lib/extraction-model";
 
 interface PageReviewEditorProps {
   bookId: string;
@@ -54,6 +58,7 @@ const BLOCK_NAME: Record<PageBlock["type"], string> = {
   markdown: "Text",
   image: "Image",
   unit_header: "Unit header",
+  table: "Table",
 };
 
 const FIELD = fieldClass;
@@ -65,6 +70,11 @@ const isEmpty = (block: PageBlock): boolean => {
       return block.markdown.trim() === "";
     case "unit_header":
       return block.title.trim() === "";
+    case "table":
+      return (
+        (block.caption ?? "").trim() === "" &&
+        block.rows.every((row) => row.cells.every((cell) => cell.text.trim() === ""))
+      );
     default:
       return false;
   }
@@ -140,6 +150,17 @@ export const PageReviewEditor = ({
 
   const setBlocks = (update: (blocks: PageBlock[]) => PageBlock[]): void =>
     setJson((current) => ({ ...current, blocks: update(current.blocks) }));
+
+  const updateTable = (
+    id: string,
+    update: (table: TableBlock) => TableBlock,
+  ): void =>
+    setJson((current) => ({
+      ...current,
+      blocks: current.blocks.map((block) =>
+        block.id === id && block.type === "table" ? update(block) : block,
+      ),
+    }));
 
   const patchBlock = (id: string, patch: Partial<PageBlock>): void =>
     setBlocks((blocks) =>
@@ -222,9 +243,13 @@ export const PageReviewEditor = ({
     const extractedJson: PageExtractedJson = {
       ...json,
       blocks: mergeAdjacentMarkdown(
-        json.blocks.filter(
-          (block) => block.type !== "markdown" || !isEmpty(block),
-        ),
+        json.blocks
+          .filter((block) => !isEmpty(block))
+          .map((block) =>
+            block.type === "unit_header"
+              ? { ...block, level: headingLevel(block.title, block.level) }
+              : block,
+          ),
       ),
     };
     const response = await fetch(
@@ -354,7 +379,7 @@ export const PageReviewEditor = ({
             <div className="flex min-h-[45px] items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
               <h3 className="text-sm font-semibold">Page content</h3>
               <span className="font-mono text-xs text-[var(--text-secondary)]">
-                {json.model.replace(/^gemini\//, "")}
+                {modelLabel(json.model)}
               </span>
             </div>
 
@@ -453,38 +478,138 @@ export const PageReviewEditor = ({
                       </div>
 
                       {block.type === "markdown" ? (
-                        <textarea
-                          aria-label="Text (Markdown)"
-                          className={`${FIELD} block font-mono`}
-                          rows={textRows(block.markdown)}
-                          value={block.markdown}
-                          ref={(element) => {
-                            areas.current[block.id] = element;
-                          }}
-                          onChange={(event) =>
-                            patchBlock(block.id, {
-                              markdown: event.target.value,
-                            })
-                          }
-                        />
+                        <div className="space-y-3">
+                          <textarea
+                            aria-label="Text (Markdown)"
+                            className={`${FIELD} block font-mono`}
+                            rows={textRows(block.markdown)}
+                            value={block.markdown}
+                            ref={(element) => {
+                              areas.current[block.id] = element;
+                            }}
+                            onChange={(event) =>
+                              patchBlock(block.id, {
+                                markdown: event.target.value,
+                              })
+                            }
+                          />
+                          {block.markdown.trim() ? (
+                            <div className="rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] px-4 text-base leading-7">
+                              <p className="pt-3 font-mono text-xs uppercase tracking-wide text-[var(--text-secondary)]">
+                                Preview
+                              </p>
+                              <RichText markdown={block.markdown} />
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {block.type === "table" ? (
+                        <div className="space-y-3">
+                          <label className="block text-sm">
+                            Caption
+                            <input
+                              className={`${FIELD} mt-1`}
+                              value={block.caption ?? ""}
+                              placeholder="none"
+                              onChange={(event) =>
+                                updateTable(block.id, (table) => ({
+                                  ...table,
+                                  caption: event.target.value.trim() || null,
+                                }))
+                              }
+                            />
+                          </label>
+                          <div className="overflow-x-auto">
+                            <table className="w-full border-collapse text-sm">
+                              <tbody>
+                                {block.rows.map((row, rowIndex) => (
+                                  <tr key={`${block.id}-${rowIndex}`}>
+                                    {row.cells.map((cell, cellIndex) => (
+                                      <td
+                                        key={`${block.id}-${rowIndex}-${cellIndex}`}
+                                        className="border border-[var(--border-hairline)] p-1 align-top"
+                                      >
+                                        <input
+                                          aria-label={
+                                            row.header ? "Header cell" : "Cell"
+                                          }
+                                          className={`${FIELD} font-sans`}
+                                          value={cell.text}
+                                          onChange={(event) =>
+                                            updateTable(block.id, (table) => ({
+                                              ...table,
+                                              rows: table.rows.map((item, itemIndex) =>
+                                                itemIndex !== rowIndex
+                                                  ? item
+                                                  : {
+                                                      ...item,
+                                                      cells: item.cells.map(
+                                                        (entry, entryIndex) =>
+                                                          entryIndex !== cellIndex
+                                                            ? entry
+                                                            : {
+                                                                ...entry,
+                                                                text: event.target.value,
+                                                              },
+                                                      ),
+                                                    },
+                                              ),
+                                            }))
+                                          }
+                                        />
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <TableView caption={block.caption} rows={block.rows} />
+                        </div>
                       ) : null}
 
                       {block.type === "unit_header" ? (
                         <>
-                          <input
-                            aria-label="Unit title"
-                            className={`${FIELD} font-semibold`}
-                            value={block.title}
-                            placeholder="Unit title"
-                            onChange={(event) =>
-                              patchBlock(block.id, {
-                                title: event.target.value,
-                              })
-                            }
-                          />
+                          <div className="flex items-start gap-2">
+                            <label className="block min-w-0 flex-1 text-sm">
+                              Title
+                              <input
+                                aria-label="Unit title"
+                                className={`${FIELD} mt-1 font-semibold`}
+                                value={block.title}
+                                placeholder="Unit title"
+                                onChange={(event) =>
+                                  patchBlock(block.id, {
+                                    title: event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                            <label className="block w-20 shrink-0 text-sm">
+                              Level
+                              <select
+                                aria-label="Heading level"
+                                className={`${FIELD} mt-1 font-mono`}
+                                value={headingLevel(block.title, block.level)}
+                                onChange={(event) =>
+                                  patchBlock(block.id, {
+                                    level: Number(event.target.value) as HeadingLevel,
+                                  })
+                                }
+                              >
+                                {[1, 2, 3, 4, 5, 6].map((level) => (
+                                  <option key={level} value={level}>
+                                    H{level}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
                           <p className="mt-2 text-xs text-[var(--text-secondary)]">
-                            A new unit starts here. The title shows in the
-                            contents and above the unit, not inside the text.
+                            H1 is a chapter, H2 a lesson, H3–H6 a subsection.
+                            It starts a unit and is indented in the contents.
+                            The title is not repeated in the text.
                           </p>
                         </>
                       ) : null}
@@ -568,10 +693,34 @@ export const PageReviewEditor = ({
                     id: crypto.randomUUID(),
                     type: "unit_header",
                     title: "",
+                    level: 2,
                   })
                 }
               >
                 Add unit header
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  addBlock({
+                    id: crypto.randomUUID(),
+                    type: "table",
+                    caption: null,
+                    rows: [
+                      {
+                        header: true,
+                        cells: [{ text: "" }, { text: "" }],
+                      },
+                      {
+                        header: false,
+                        cells: [{ text: "" }, { text: "" }],
+                      },
+                    ],
+                  })
+                }
+              >
+                Add table
               </Button>
             </div>
           </Card>

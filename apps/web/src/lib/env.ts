@@ -3,6 +3,9 @@ export interface AppEnv {
   adminToken: string;
   /** Used on the server only, to ask Google which models the key can use. */
   geminiApiKey: string;
+  /** Set to offer that provider in the extraction catalog. The worker needs the same key. */
+  openaiApiKey: string;
+  anthropicApiKey: string;
   r2: {
     endpoint: string;
     accessKeyId: string;
@@ -22,6 +25,8 @@ export const getEnv = (): AppEnv => {
     databaseUrl,
     adminToken,
     geminiApiKey: (process.env.GEMINI_API_KEY ?? "").trim(),
+    openaiApiKey: (process.env.OPENAI_API_KEY ?? "").trim(),
+    anthropicApiKey: (process.env.ANTHROPIC_API_KEY ?? "").trim(),
     r2: {
       endpoint: process.env.R2_ENDPOINT ?? "http://localhost:9000",
       accessKeyId: process.env.R2_ACCESS_KEY_ID ?? "minioadmin",

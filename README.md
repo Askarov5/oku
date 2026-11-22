@@ -41,7 +41,7 @@ uvicorn app.main:app --reload --port 8000
 
 Open [http://localhost:3000/admin/library](http://localhost:3000/admin/library) and sign in with `ADMIN_TOKEN` (default `dev-admin-token`).
 
-For real extraction instead of mock text, `pip install litellm`, start the worker with `MOCK_LLM="false"` and `GEMINI_API_KEY` set, and put the same key in `apps/web/.env.local` so the admin can list the models it may use. The model is chosen under **Extraction model** in the admin library and applies to extraction jobs started after the change; the worker's `LLM_MODEL` is only the fallback when none is saved.
+For real extraction instead of mock text, `pip install litellm`, start the worker with `MOCK_LLM="false"` and `GEMINI_API_KEY` set, and put the same key in `apps/web/.env.local` so the admin can list the models it may use. `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, set in both places, adds that provider to the list. The model is chosen under **Extraction model** in the admin library and applies to extraction jobs started after the change; the worker's `LLM_MODEL` is only the fallback when none is saved.
 
 Local object storage writes to `.r2-local/` and is served by Next.js at `/api/media/*`. Set `STORAGE_DRIVER=r2` plus R2/MinIO env vars when you have S3-compatible storage.
 

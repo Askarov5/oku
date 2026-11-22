@@ -34,26 +34,40 @@ block per paragraph or per heading.
 Block types, in reading order:
 - {"type": "markdown", "markdown": "..."}
   All prose between two components goes in ONE markdown block: paragraphs
-  separated by a blank line, headings as #, ## or ###, lists, and tables as
-  GitHub-flavored Markdown tables. Definitions, examples and exercises are
-  plain Markdown too. When the page opens with the rest of a table begun on the
-  previous page, give it an empty header row (| | | |) so that no data row is
-  turned into a header.
+  separated by a blank line, headings as #, ## or ###, lists, and simple
+  tables as GitHub-flavored Markdown tables (one header row, every cell on
+  one line, no merged cells). Definitions, examples and exercises are plain
+  Markdown too. When the page opens with the rest of a simple table begun on
+  the previous page, give it an empty header row (| | | |) so that no data
+  row is turned into a header.
+- {"type": "table", "caption": "1-таблица. ..." | null, "rows": [
+    {"header": true, "cells": [{"text": "Жылы", "rowspan": 2},
+      {"text": "Анын ичинен", "colspan": 2}]},
+    {"header": true, "cells": [{"text": "шаар калкы"}, {"text": "айыл калкы"}]},
+    {"header": false, "cells": [{"text": "1897"}, {"text": "63,0"}, {"text": "600,0"}]}
+  ]}
+  Use this, not a Markdown table, when a cell spans columns or rows, a header
+  cell breaks onto a second printed line, or a heading sits above subheadings.
+  The caption is the printed table label and title, or null. colspan and
+  rowspan are omitted when the cell does not span. Do not repeat the grid in
+  the markdown.
 - {"type": "image", "box_2d": [ymin, xmin, ymax, xmax],
    "alt": "...", "ai_description": "...", "caption": "..." | null}
   One per map, diagram, photo or chart, placed exactly where it appears between
   the text. box_2d is the tight bounding box of the whole picture on the page,
   on a 0-1000 scale, without its caption. alt and ai_description are written in
   the book language; caption is the printed caption, if any.
-- {"type": "unit_header", "title": "..."}
+- {"type": "unit_header", "title": "...", "level": 1}
   Only where a chapter or a numbered lesson/section of the book begins: a title
   the book's own table of contents would list (for example "II. ...",
-  "II. 3. ..." or "§ 3. ..."). Write the title in one line, with its number, in
-  normal sentence capitalization even when it is printed in capitals. The title
-  goes here and is NOT repeated in the markdown. When a chapter title is
-  followed by the title of its first section, they are two unit_header blocks.
-  Every other heading (subheadings inside a section, "questions and tasks",
-  table titles) stays inside markdown.
+  "II. 3. ..." or "§ 3. ..."). level is 1 to 6: 1 a part or chapter ("II. ..."),
+  2 a lesson ("II. 1. ..." or "§ 3. ..."), 3 to 6 a subsection under that
+  lesson. Write the title in one line, with its number, in normal sentence
+  capitalization even when it is printed in capitals. The title goes here and
+  is NOT repeated in the markdown. When a chapter title is followed by the
+  title of its first section, they are two unit_header blocks, the chapter at
+  level 1 and the section at level 2. Every other heading (an unnumbered
+  subheading, "questions and tasks", table titles) stays inside markdown.
 
 Page fields:
 - printedPage: the page number printed on the page, exactly as printed, or null
@@ -193,27 +207,61 @@ def mock_extract(
     )
 
 
-def uses_mock() -> bool:
-    return settings.mock_llm or not settings.gemini_api_key
-
-
 # The setting an admin changes in the web app (EXTRACTION_MODEL_SETTING in @oku/db).
 EXTRACTION_MODEL_SETTING = "extraction_model"
 
-# The worker holds a Gemini key only, so only Gemini models can run.
-_MODEL_ID = re.compile(r"gemini/[a-z0-9][a-z0-9.-]{1,79}")
+# LiteLLM provider prefix to the setting that holds that provider's key.
+_PROVIDER_KEYS = {
+    "gemini": "gemini_api_key",
+    "openai": "openai_api_key",
+    "anthropic": "anthropic_api_key",
+}
+
+_MODEL_ID = re.compile(r"(gemini|openai|anthropic)/[a-z0-9][a-z0-9.-]{1,79}")
+
+
+def provider_api_key(model: str) -> str:
+    """The key for this LiteLLM id, or empty when that provider is not configured."""
+    provider = model.split("/", 1)[0]
+    attr = _PROVIDER_KEYS.get(provider)
+    if attr is None:
+        return ""
+    value = getattr(settings, attr, "")
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _redact(text: str) -> str:
+    redacted = text
+    for attr in _PROVIDER_KEYS.values():
+        key = getattr(settings, attr, "")
+        if isinstance(key, str) and key:
+            redacted = redacted.replace(key, "***")
+    return redacted
+
+
+def uses_mock(model: str | None = None) -> bool:
+    if settings.mock_llm:
+        return True
+    return not provider_api_key(model or settings.llm_model)
 
 
 def resolve_model(saved: Any) -> str:
-    """The model for a job: the admin's choice, else the worker's own default."""
+    """The model for a job: the admin's choice, else the worker's own default.
+
+    Gemini ids are accepted as before. Another provider is used only when its
+    API key is set; otherwise the worker default runs.
+    """
     if isinstance(saved, str) and _MODEL_ID.fullmatch(saved):
-        return saved
+        provider = saved.split("/", 1)[0]
+        if provider == "gemini" or provider_api_key(saved):
+            return saved
     return settings.llm_model
 
 
 def model_name(model: str | None = None) -> str:
     """What produced a page, as recorded on it."""
-    return "mock" if uses_mock() else model or settings.llm_model
+    target = model or settings.llm_model
+    return "mock" if uses_mock(target) else target
 
 
 class UnusableResponse(ValueError):
@@ -282,10 +330,26 @@ def normalize_title(raw: str) -> str:
     return f"{number} {rest}".strip()
 
 
+def heading_level(title: str, given: Any = None) -> int:
+    """1–6. An explicit level wins; otherwise the title's numbering decides."""
+    if isinstance(given, int) and not isinstance(given, bool) and 1 <= given <= 6:
+        return given
+    if isinstance(given, str) and given.isdigit() and 1 <= int(given) <= 6:
+        return int(given)
+    match = _TITLE_NUMBER.match(title.strip())
+    number = match.group(1) if match else ""
+    if not number:
+        return 2
+    if number.lstrip().startswith("§"):
+        return 2
+    parts = [part for part in number.split(".") if part.strip()]
+    return min(6, max(1, len(parts)))
+
+
 # A Markdown heading that carries a chapter or section number: "## II. ...",
-# "### II. 3. ..." or "## § 3. ...".
+# "### II. 3. ..." or "## § 3. ...". The hashes are its level.
 _NUMBERED_HEADING = re.compile(
-    r"^#{1,6}\s+\**((?:[IVXLCІХ]+\.(?:\s*\d+\.)?|§\s*\d+\.?)\s+\S.*?)\**\s*$"
+    r"^(#{1,6})\s+\**((?:[IVXLCІХ]+\.(?:\s*\d+\.)?|§\s*\d+\.?)\s+\S.*?)\**\s*$"
 )
 # A line of a printed table of contents: a title, dot leaders, a page number.
 _CONTENTS_LINE = re.compile(r"(?:\.{3,}|…)\s*\d+\s*$")
@@ -310,11 +374,54 @@ def split_numbered_headings(markdown: str) -> list[dict[str, Any]]:
         heading = _NUMBERED_HEADING.match(line.strip())
         if heading and not _CONTENTS_LINE.search(line):
             flush()
-            blocks.append({"type": "unit_header", "title": normalize_title(heading.group(1))})
+            blocks.append(
+                {
+                    "type": "unit_header",
+                    "title": normalize_title(heading.group(2)),
+                    "level": len(heading.group(1)),
+                }
+            )
         else:
             kept.append(line)
     flush()
     return blocks
+
+
+def _span(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    number = int(value) if isinstance(value, (int, float, str)) and str(value).isdigit() else None
+    return number if number is not None and number > 1 else None
+
+
+def _normalize_table(raw: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+    rows: list[dict[str, Any]] = []
+    for raw_row in raw.get("rows") or []:
+        if not isinstance(raw_row, dict):
+            continue
+        cells: list[dict[str, Any]] = []
+        for raw_cell in raw_row.get("cells") or []:
+            if isinstance(raw_cell, str):
+                cells.append({"text": raw_cell.strip()})
+                continue
+            if not isinstance(raw_cell, dict):
+                continue
+            cell: dict[str, Any] = {"text": _text(raw_cell.get("text"))}
+            colspan = _span(raw_cell.get("colspan"))
+            rowspan = _span(raw_cell.get("rowspan"))
+            if colspan is not None:
+                cell["colspan"] = colspan
+            if rowspan is not None:
+                cell["rowspan"] = rowspan
+            cells.append(cell)
+        if cells:
+            rows.append({"header": raw_row.get("header") is True, "cells": cells})
+    if not rows:
+        return None, "dropped_block: table had no rows"
+    return (
+        {"type": "table", "caption": _text(raw.get("caption")) or None, "rows": rows},
+        None,
+    )
 
 
 def _normalize_block(raw: Any) -> tuple[dict[str, Any] | None, str | None]:
@@ -325,7 +432,12 @@ def _normalize_block(raw: Any) -> tuple[dict[str, Any] | None, str | None]:
     block_type = raw.get("type")
     if block_type == "unit_header":
         title = normalize_title(_text(raw.get("title")))
-        return ({"type": "unit_header", "title": title}, None) if title else (None, None)
+        if not title:
+            return None, None
+        return (
+            {"type": "unit_header", "title": title, "level": heading_level(title, raw.get("level"))},
+            None,
+        )
 
     if block_type == "image":
         box = _normalize_box(raw.get("bbox", raw.get("box_2d")))
@@ -344,6 +456,9 @@ def _normalize_block(raw: Any) -> tuple[dict[str, Any] | None, str | None]:
             },
             None,
         )
+
+    if block_type == "table":
+        return _normalize_table(raw)
 
     # Anything else that carries text is kept as Markdown rather than lost.
     markdown = _text(raw.get("markdown")) or _text(raw.get("text"))
@@ -429,7 +544,7 @@ def _complete(*, page_number: int, language: str, image_url: str, model: str) ->
         # and reject the setting, so it is dropped where it is not supported.
         temperature=0,
         drop_params=True,
-        api_key=settings.gemini_api_key,
+        api_key=provider_api_key(model),
         timeout=settings.llm_timeout_sec,
         # Retries are handled here, per page, with the service's own retry hint.
         num_retries=0,
@@ -467,9 +582,9 @@ def extract_page(
     image: Image.Image,
     model: str | None = None,
 ) -> LlmPageResponse:
-    if uses_mock():
-        return mock_extract(page_number=page_number, language=language, image=image)
     model = model or settings.llm_model
+    if uses_mock(model):
+        return mock_extract(page_number=page_number, language=language, image=image)
 
     import litellm
 
@@ -499,14 +614,14 @@ def extract_page(
             # A spent daily quota does not come back in a minute.
             if "PerDay" in str(exc):
                 raise RuntimeError(
-                    "Gemini daily quota is used up; retry the failed pages tomorrow "
+                    "The model's daily quota is used up; retry the failed pages tomorrow "
                     "or use a key with billing enabled"
                 ) from exc
             error, wait = exc, retry_delay(exc, attempt)
 
         if attempt == settings.llm_max_attempts:
             # The message is stored on the page and shown in the admin: never the key.
-            detail = str(error).replace(settings.gemini_api_key, "***")[:300]
+            detail = _redact(str(error))[:300]
             raise RuntimeError(
                 f"extraction failed after {attempt} attempts: "
                 f"{type(error).__name__}: {detail}"
@@ -516,7 +631,7 @@ def extract_page(
             page_number,
             attempt,
             type(error).__name__,
-            " ".join(str(error).replace(settings.gemini_api_key, "***").split())[:160],
+            " ".join(_redact(str(error)).split())[:160],
             wait,
         )
         time.sleep(wait)
@@ -544,6 +659,15 @@ def collect_text(blocks: list[Any]) -> str:
             parts.append(data.get("markdown", ""))
         elif block_type == "unit_header":
             parts.append(data.get("title", ""))
+        elif block_type == "table":
+            cells = [
+                cell.get("text", "")
+                for row in data.get("rows") or []
+                if isinstance(row, dict)
+                for cell in row.get("cells") or []
+                if isinstance(cell, dict)
+            ]
+            parts.append(" ".join([data.get("caption") or "", *cells]))
         elif block_type == "image":
             parts.append(
                 f"{data.get('alt', '')} {data.get('ai_description', '')} {data.get('caption') or ''}"

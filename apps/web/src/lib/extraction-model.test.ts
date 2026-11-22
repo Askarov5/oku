@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  catalogOptions,
   isModelId,
+  isRunnableModel,
   modelLabel,
   toModelOptions,
   withModel,
@@ -12,9 +14,14 @@ describe("isModelId", () => {
     expect(isModelId("gemini/gemini-flash-latest")).toBe(true);
   });
 
-  it("rejects other providers and anything that is not an id", () => {
+  it("accepts other providers as LiteLLM ids", () => {
+    expect(isModelId("openai/gpt-4.1")).toBe(true);
+    expect(isModelId("anthropic/claude-sonnet-4-5")).toBe(true);
+  });
+
+  it("rejects an unknown provider and anything that is not an id", () => {
     expect(isModelId("gemini-3.6-flash")).toBe(false);
-    expect(isModelId("openai/gpt-5")).toBe(false);
+    expect(isModelId("cohere/command")).toBe(false);
     expect(isModelId("gemini/")).toBe(false);
     expect(isModelId("gemini/Gemini 3.6")).toBe(false);
     expect(isModelId("gemini/x; drop table books")).toBe(false);
@@ -24,8 +31,35 @@ describe("isModelId", () => {
 });
 
 describe("modelLabel", () => {
-  it("shows the model's name at Google", () => {
+  it("shows the model's own name", () => {
     expect(modelLabel("gemini/gemini-3.6-flash")).toBe("gemini-3.6-flash");
+    expect(modelLabel("openai/gpt-4.1")).toBe("gpt-4.1");
+  });
+});
+
+describe("catalogOptions", () => {
+  const keys = { gemini: "", openai: "", anthropic: "" };
+
+  it("adds a provider only when its key is set", () => {
+    const ids = catalogOptions(null, { ...keys, openai: "sk-test" }).map(
+      (option) => option.id,
+    );
+    expect(ids).toContain("gemini/gemini-3.6-flash");
+    expect(ids).toContain("openai/gpt-4.1");
+    expect(ids.some((id) => id.startsWith("anthropic/"))).toBe(false);
+  });
+});
+
+describe("isRunnableModel", () => {
+  const keys = { gemini: "", openai: "", anthropic: "" };
+
+  it("allows Gemini without a key and other providers only with one", () => {
+    expect(isRunnableModel("gemini/gemini-3.6-flash", keys)).toBe(true);
+    expect(isRunnableModel("openai/gpt-4.1", keys)).toBe(false);
+    expect(isRunnableModel("openai/gpt-4.1", { ...keys, openai: "sk-test" })).toBe(
+      true,
+    );
+    expect(isRunnableModel("cohere/command", keys)).toBe(false);
   });
 });
 

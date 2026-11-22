@@ -126,6 +126,8 @@ export const ingestionJobs = pgTable("ingestion_jobs", {
 /** Mirrors `UnitHeader` in @oku/shared-types. */
 export interface UnitHeaderJson {
   title: string;
+  /** 1 a chapter through 6 a subsection. Absent on units published before levels. */
+  level?: number;
   /** Page range by position in the source PDF. */
   pageStart: number;
   pageEnd: number;
@@ -166,7 +168,8 @@ export const appSettings = pgTable("app_settings", {
 });
 
 /**
- * The model that reads pages, as a LiteLLM id ("gemini/gemini-3.6-flash").
+ * The model that reads pages, as a LiteLLM id ("gemini/gemini-3.6-flash",
+ * or "openai/…" / "anthropic/…" when that provider's API key is set).
  * The AI worker looks it up when it starts an extraction job.
  */
 export const EXTRACTION_MODEL_SETTING = "extraction_model";

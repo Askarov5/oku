@@ -59,18 +59,57 @@
       "oneOf": [
         { "$ref": "#/$defs/markdown" },
         { "$ref": "#/$defs/image" },
-        { "$ref": "#/$defs/unitHeader" }
+        { "$ref": "#/$defs/unitHeader" },
+        { "$ref": "#/$defs/table" }
       ]
     },
     "unitBlock": {
       "oneOf": [
         { "$ref": "#/$defs/markdown" },
         { "$ref": "#/$defs/image" },
-        { "$ref": "#/$defs/pageAnchor" }
+        { "$ref": "#/$defs/pageAnchor" },
+        { "$ref": "#/$defs/table" }
       ]
     },
+    "tableCell": {
+      "type": "object",
+      "required": ["text"],
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string" },
+        "colspan": { "type": "integer", "minimum": 1 },
+        "rowspan": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "tableRow": {
+      "type": "object",
+      "required": ["header", "cells"],
+      "additionalProperties": false,
+      "properties": {
+        "header": { "type": "boolean" },
+        "cells": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/tableCell" }
+        }
+      }
+    },
+    "table": {
+      "description": "A grid GFM cannot draw: a cell spans columns or rows, or a header is stacked. Simple tables stay in Markdown.",
+      "type": "object",
+      "required": ["id", "type", "caption", "rows"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/blockId" },
+        "type": { "const": "table" },
+        "caption": { "type": ["string", "null"] },
+        "rows": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/tableRow" }
+        }
+      }
+    },
     "markdown": {
-      "description": "Continuous prose. Headings, lists and tables stay inside the Markdown.",
+      "description": "Continuous prose. Headings, lists and simple tables stay inside the Markdown.",
       "type": "object",
       "required": ["id", "type", "markdown"],
       "additionalProperties": false,
@@ -97,14 +136,15 @@
       }
     },
     "unitHeader": {
-      "description": "A new unit starts here. The title becomes the unit header, not body content.",
+      "description": "A new unit starts here. level is 1 for a chapter through 6 for a small subsection. The title becomes the unit header, not body content.",
       "type": "object",
       "required": ["id", "type", "title"],
       "additionalProperties": false,
       "properties": {
         "id": { "$ref": "#/$defs/blockId" },
         "type": { "const": "unit_header" },
-        "title": { "type": "string" }
+        "title": { "type": "string" },
+        "level": { "type": "integer", "minimum": 1, "maximum": 6 }
       }
     },
     "pageAnchor": {

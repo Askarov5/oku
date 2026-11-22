@@ -21,6 +21,33 @@ import { useBookDetail } from "@/lib/use-book-detail";
 const BACK =
   "text-sm text-[var(--text-secondary)] hover:text-[var(--accent-ink)] coarse:inline-flex coarse:min-h-[44px] coarse:items-center";
 
+const TITLE_CLASS = [
+  "",
+  "text-3xl font-bold",
+  "text-2xl font-bold",
+  "text-xl font-semibold",
+  "text-lg font-semibold",
+  "text-base font-semibold",
+  "text-sm font-semibold",
+];
+
+const UnitTitle = ({
+  level,
+  title,
+}: {
+  level: number;
+  title: string;
+}): ReactElement => {
+  const tag = Math.min(6, Math.max(1, level));
+  const className = `mt-2 tracking-tight coarse:mt-0 ${TITLE_CLASS[tag] ?? TITLE_CLASS[2]}`;
+  if (tag === 1) return <h1 className={className}>{title}</h1>;
+  if (tag === 2) return <h2 className={className}>{title}</h2>;
+  if (tag === 3) return <h3 className={className}>{title}</h3>;
+  if (tag === 4) return <h4 className={className}>{title}</h4>;
+  if (tag === 5) return <h5 className={className}>{title}</h5>;
+  return <h6 className={className}>{title}</h6>;
+};
+
 /*
  * One unit, as it reads: its header above, its body below. The same header
  * is the unit's row in the contents on the left.
@@ -77,9 +104,7 @@ const UnitRoute = (): ReactElement => {
             <Link href={bookHref} className={BACK}>
               ← {data.book.title}
             </Link>
-            <h2 className="mt-2 text-2xl font-bold tracking-tight coarse:mt-0">
-              {unit.header.title}
-            </h2>
+            <UnitTitle level={unit.header.level} title={unit.header.title} />
             <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-xs tabular-nums text-[var(--text-secondary)]">
               <span>
                 Unit {index + 1} of {outline.units.length}
@@ -104,6 +129,7 @@ const UnitRoute = (): ReactElement => {
               {unit.body.some((block) => block.type !== "page_anchor") ? (
                 <UnitBody
                   body={unit.body}
+                  headingLevel={unit.header.level}
                   pageHref={(pageNumber) => `${bookHref}/pages/${pageNumber}`}
                 />
               ) : (

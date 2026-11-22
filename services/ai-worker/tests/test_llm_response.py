@@ -86,6 +86,7 @@ def test_a_numbered_heading_left_in_markdown_becomes_a_unit_header() -> None:
     assert [block.type for block in page.blocks] == ["markdown", "unit_header", "markdown"]
     assert page.blocks[0].markdown == "Мурунку бөлүмдүн аягы."
     assert page.blocks[1].title == "I. 1. Кыргызстандын географиялык абалы"
+    assert page.blocks[1].level == 3
     # An unnumbered heading and a numbered list stay where they are.
     assert page.blocks[2].markdown.startswith("Кыргызстан – эгемендүү өлкө.")
     assert "### Суроолор жана тапшырмалар" in page.blocks[2].markdown
@@ -158,6 +159,47 @@ def test_an_escape_json_does_not_have_is_repaired() -> None:
     assert page.blocks[0].markdown == "43°16' жана \"Ысык-Көл\" C:\\ жол"
 
 
+def test_a_merged_header_is_kept_as_a_table() -> None:
+    page = parse_page_response(
+        _answer(
+            blocks=[
+                {
+                    "type": "table",
+                    "caption": "1-таблица. Калк",
+                    "rows": [
+                        {
+                            "header": True,
+                            "cells": [
+                                {"text": "Жылы", "rowspan": 2},
+                                {"text": "Анын ичинен", "colspan": "2"},
+                            ],
+                        },
+                        {
+                            "header": True,
+                            "cells": ["шаар калкы", "айыл калкы"],
+                        },
+                        {
+                            "header": False,
+                            "cells": [
+                                {"text": "1897"},
+                                {"text": "63,0", "colspan": 1},
+                                {"text": "600,0"},
+                            ],
+                        },
+                    ],
+                }
+            ]
+        )
+    )
+    table = page.blocks[0]
+    assert table.type == "table"
+    assert table.caption == "1-таблица. Калк"
+    assert table.rows[0].cells[0].rowspan == 2
+    assert table.rows[0].cells[1].colspan == 2
+    assert table.rows[1].cells[0].text == "шаар калкы"
+    assert table.rows[2].cells[1].colspan is None
+
+
 def test_a_blank_page_is_a_page() -> None:
     assert parse_page_response(_answer(printedPage=None)).blocks == []
 
@@ -170,6 +212,11 @@ def test_unusable_answers_ask_for_a_retry(content: str) -> None:
 
 def test_the_admins_model_is_used_for_a_job() -> None:
     assert resolve_model("gemini/gemini-3.8-flash") == "gemini/gemini-3.8-flash"
+
+
+def test_another_provider_is_used_when_its_key_is_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test")
+    assert resolve_model("openai/gpt-4.1") == "openai/gpt-4.1"
 
 
 @pytest.mark.parametrize(

@@ -2,9 +2,10 @@ import { z } from "zod";
 
 /*
  * Book content is continuous Markdown interrupted only by components.
- * Headings, lists and tables stay inside the Markdown; they are not blocks.
- * Ingestion emits `markdown` and `image` only. Other components are authored
- * later and are never produced by automatic digitisation.
+ * Headings, lists, and simple tables stay inside the Markdown. A table block
+ * is a grid GFM cannot draw: a cell spans columns or rows, or a header is
+ * stacked on a second line. Ingestion emits markdown, image, unit_header,
+ * and table.
  */
 
 export const BBoxSchema = z.object({
@@ -15,6 +16,25 @@ export const BBoxSchema = z.object({
 });
 
 export type BBox = z.infer<typeof BBoxSchema>;
+
+export const TableCellSchema = z.object({
+  text: z.string(),
+  colspan: z.number().int().min(1).optional(),
+  rowspan: z.number().int().min(1).optional(),
+});
+
+export const TableRowSchema = z.object({
+  header: z.boolean(),
+  cells: z.array(TableCellSchema),
+});
+
+/** A grid with merged or stacked header cells. Simple tables stay in Markdown. */
+export const TableBlockSchema = z.object({
+  id: z.string().min(1),
+  type: z.literal("table"),
+  caption: z.string().nullable(),
+  rows: z.array(TableRowSchema),
+});
 
 export const MarkdownBlockSchema = z.object({
   id: z.string().min(1),
@@ -32,11 +52,51 @@ export const ImageBlockSchema = z.object({
   bbox: BBoxSchema.nullish(),
 });
 
-/** Page-level marker: a new unit starts here. Its title becomes the unit header, not body content. */
+/** 1 is a chapter, 2 a lesson, 3–6 a subsection. */
+export const HeadingLevelSchema = z.number().int().min(1).max(6);
+
+export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
+
+const TITLE_NUMBER =
+  /^((?:§\s*\d+\.?|(?:[IVXLCІХ]+|\d+)\.)(?:\s*\d+\.)*)\s*(.*)$/i;
+
+/**
+ * The rank of a title the book numbers itself. "II." is 1, "II. 1." and
+ * "§ 3." are 2, "II. 1. 2." is 3. An unnumbered title is a lesson.
+ */
+export const inferHeadingLevel = (title: string): HeadingLevel => {
+  const match = title.trim().match(TITLE_NUMBER);
+  const number = match?.[1] ?? "";
+  if (!number) {
+    return 2;
+  }
+  if (number.trim().startsWith("§")) {
+    return 2;
+  }
+  const parts = number.split(".").map((part) => part.trim()).filter(Boolean);
+  const level = parts.length;
+  if (level < 1) {
+    return 2;
+  }
+  return Math.min(6, level) as HeadingLevel;
+};
+
+/** An explicit level wins; otherwise the title's own numbering decides. */
+export const headingLevel = (
+  title: string,
+  level?: number | null,
+): HeadingLevel =>
+  typeof level === "number" && level >= 1 && level <= 6
+    ? (level as HeadingLevel)
+    : inferHeadingLevel(title);
+
+/** A new unit starts here. The title becomes the unit header, not body content. */
 export const UnitHeaderBlockSchema = z.object({
   id: z.string().min(1),
   type: z.literal("unit_header"),
   title: z.string(),
+  /** Absent on pages saved before levels existed; readers infer it from the title. */
+  level: HeadingLevelSchema.optional(),
 });
 
 /**
@@ -57,6 +117,7 @@ export const PageBlockSchema = z.discriminatedUnion("type", [
   MarkdownBlockSchema,
   ImageBlockSchema,
   UnitHeaderBlockSchema,
+  TableBlockSchema,
 ]);
 
 /** What a published unit body holds. */
@@ -64,8 +125,12 @@ export const UnitBlockSchema = z.discriminatedUnion("type", [
   MarkdownBlockSchema,
   ImageBlockSchema,
   PageAnchorBlockSchema,
+  TableBlockSchema,
 ]);
 
+export type TableCell = z.infer<typeof TableCellSchema>;
+export type TableRow = z.infer<typeof TableRowSchema>;
+export type TableBlock = z.infer<typeof TableBlockSchema>;
 export type MarkdownBlock = z.infer<typeof MarkdownBlockSchema>;
 export type ImageBlock = z.infer<typeof ImageBlockSchema>;
 export type UnitHeaderBlock = z.infer<typeof UnitHeaderBlockSchema>;
@@ -91,6 +156,7 @@ export type PageExtractedJson = z.infer<typeof PageExtractedJsonSchema>;
 /** The header of a unit is kept apart from its body. */
 export const UnitHeaderSchema = z.object({
   title: z.string(),
+  level: HeadingLevelSchema,
   pageStart: z.number().int().min(1),
   pageEnd: z.number().int().min(1),
   pageStartLabel: z.string().nullable(),
@@ -121,6 +187,11 @@ export const collectBlockText = (blocks: PageBlock[]): string =>
           return block.title;
         case "image":
           return `${block.alt} ${block.ai_description} ${block.caption ?? ""}`;
+        case "table":
+          return [
+            block.caption ?? "",
+            ...block.rows.flatMap((row) => row.cells.map((cell) => cell.text)),
+          ].join(" ");
         default:
           return "";
       }
