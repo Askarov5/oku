@@ -3,7 +3,7 @@
 import type { MouseEvent, ReactElement, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "./button";
-import { CloseIcon, MenuIcon } from "./icons";
+import { CloseIcon, MenuIcon, MoonIcon, SunIcon } from "./icons";
 
 export interface ThemeShellProps {
   title: string;
@@ -91,6 +91,7 @@ export const ThemeShell = ({
         setTheme((current) => (current === "light" ? "dark" : "light"))
       }
     >
+      {theme === "light" ? <MoonIcon /> : <SunIcon />}
       {theme === "light" ? "Night" : "Day"}
     </Button>
   );

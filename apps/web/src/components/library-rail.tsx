@@ -106,7 +106,7 @@ const PageRows = ({
             <span
               className={`ml-auto font-mono text-xs ${statusClass(page.status, active)}`.trim()}
             >
-              {page.status}
+              {page.status === "stored" ? "saved" : page.status}
             </span>
           </Link>
         </li>

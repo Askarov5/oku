@@ -21,7 +21,7 @@ export const coverExtension = (contentType: string): string | null =>
   COVER_EXTENSIONS[contentType] ?? null;
 
 export const bookStoragePrefix = (bookId: string): string =>
-  `books/kg/9/political_geography/${bookId}`;
+  `books/kg/${bookId}`;
 
 const UNITS = ["KB", "MB", "GB"] as const;
 

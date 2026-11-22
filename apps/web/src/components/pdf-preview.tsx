@@ -18,6 +18,11 @@ interface PdfPreviewProps {
   file: File;
   /** Called once per file when reading ends; null when the file cannot be previewed. */
   onRead: (result: PdfPreviewResult | null) => void;
+  /**
+   * Whether a 1-based PDF page sits in the digitize range. Null hides the note
+   * (invalid or unknown range). Re-evaluated for the page on screen.
+   */
+  pageInRange?: (pageNumber: number) => boolean | null;
 }
 
 type PreviewStatus = "reading" | "ready" | "failed";
@@ -30,7 +35,11 @@ const PAGE_WIDTH = 320;
  * and its pages one at a time, so the page range can be checked against the
  * real pages.
  */
-export const PdfPreview = ({ file, onRead }: PdfPreviewProps): ReactElement => {
+export const PdfPreview = ({
+  file,
+  onRead,
+  pageInRange,
+}: PdfPreviewProps): ReactElement => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const onReadRef = useRef(onRead);
   const [pdf, setPdf] = useState<OpenedPdf | null>(null);
@@ -111,6 +120,7 @@ export const PdfPreview = ({ file, onRead }: PdfPreviewProps): ReactElement => {
   }, [pdf, page]);
 
   const pageCount = pdf?.pageCount ?? 0;
+  const inRange = pageInRange?.(page) ?? null;
 
   return (
     <section aria-label="PDF preview" className="text-sm">
@@ -180,6 +190,11 @@ export const PdfPreview = ({ file, onRead }: PdfPreviewProps): ReactElement => {
               <ChevronRightIcon />
             </Button>
           </div>
+          {inRange === null ? null : (
+            <p className="mt-2 text-xs text-[var(--text-secondary)]">
+              {inRange ? "Will be digitized" : "Saved only"}
+            </p>
+          )}
         </>
       ) : null}
     </section>

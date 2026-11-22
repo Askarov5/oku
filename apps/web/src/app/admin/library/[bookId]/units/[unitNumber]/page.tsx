@@ -19,7 +19,7 @@ import { pageRangeLabel } from "@/lib/page-label";
 import { useBookDetail } from "@/lib/use-book-detail";
 
 const BACK =
-  "text-sm text-[var(--text-secondary)] hover:text-[var(--accent-ink)] coarse:inline-flex coarse:min-h-[44px] coarse:items-center";
+  "inline-flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--accent-ink)] coarse:min-h-[44px]";
 
 const TITLE_CLASS = [
   "",
@@ -92,7 +92,8 @@ const UnitRoute = (): ReactElement => {
       ) : !unit ? (
         <div>
           <Link href={bookHref} className={BACK}>
-            ← {data.book.title}
+            <ChevronLeftIcon />
+            {data.book.title}
           </Link>
           <p className="mt-4 text-[var(--text-secondary)]">
             This book has no unit {params.unitNumber}.
@@ -102,7 +103,8 @@ const UnitRoute = (): ReactElement => {
         <div>
           <header className="mb-6">
             <Link href={bookHref} className={BACK}>
-              ← {data.book.title}
+              <ChevronLeftIcon />
+              {data.book.title}
             </Link>
             <UnitTitle level={unit.header.level} title={unit.header.title} />
             <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-xs tabular-nums text-[var(--text-secondary)]">

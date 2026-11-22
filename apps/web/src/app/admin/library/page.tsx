@@ -1,60 +1,78 @@
 "use client";
 
-import type { Book } from "@oku/db";
-import { Button, Card, Notice, StatusPill, fieldClass } from "@oku/ui";
+import {
+  Button,
+  Notice,
+  PencilIcon,
+  RefreshIcon,
+  StatusPill,
+  TrashIcon,
+} from "@oku/ui";
 import type { NoticeState } from "@oku/ui";
 import Link from "next/link";
-import type { FormEvent, ReactElement } from "react";
-import { useCallback, useEffect, useState } from "react";
+import type { ReactElement } from "react";
+import { useEffect, useState } from "react";
 import { AdminGate } from "@/components/admin-gate";
 import { BookCover } from "@/components/book-cover";
+import { BookForm, EMPTY_BOOK_FORM, bookFormInitial } from "@/components/book-form";
+import type { BookFormDraft } from "@/components/book-form";
 import { ExtractionModelCard } from "@/components/extraction-model-card";
-import { PdfPreview } from "@/components/pdf-preview";
-import type { PdfPreviewResult } from "@/components/pdf-preview";
-
-const FIELD = `${fieldClass} mt-1`;
+import type { Category, LibraryBook } from "@/lib/catalog";
+import { shelfLine } from "@/lib/catalog";
+import { forgetBookDetail } from "@/lib/use-book-detail";
 
 const LibraryPage = (): ReactElement => {
-  const [books, setBooks] = useState<Book[]>([]);
-  const [title, setTitle] = useState("");
-  const [authorName, setAuthorName] = useState("");
-  const [language, setLanguage] = useState<"ky" | "ru">("ky");
-  const [pageStart, setPageStart] = useState("");
-  const [pageEnd, setPageEnd] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  // What the preview learned from the chosen file; `reading` holds the upload until it has.
-  const [preview, setPreview] = useState<PdfPreviewResult | null>(null);
-  const [reading, setReading] = useState(false);
+  const [books, setBooks] = useState<LibraryBook[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [message, setMessage] = useState<NoticeState | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
 
   const loadBooks = async (): Promise<void> => {
     const response = await fetch("/api/admin/books");
     if (!response.ok) {
       return;
     }
-    const data = (await response.json()) as { books: Book[] };
+    const data = (await response.json()) as {
+      books: LibraryBook[];
+      categories: Category[];
+    };
     setBooks(data.books);
+    setCategories(data.categories);
   };
 
   useEffect(() => {
     void loadBooks();
   }, []);
 
-  const chooseFile = (chosen: File | null): void => {
-    setFile(chosen);
-    setPreview(null);
-    setReading(chosen !== null);
+  const editing = books.find((book) => book.id === editingId) ?? null;
+
+  useEffect(() => {
+    if (!editingId) {
+      return;
+    }
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document.getElementById("book-form")?.scrollIntoView({
+      behavior: reduce ? "auto" : "smooth",
+      block: "nearest",
+    });
+  }, [editingId]);
+
+  const openEdit = (bookId: string): void => {
+    setSaved(null);
+    setMessage(null);
+    setEditingId(bookId);
   };
 
-  const onPreviewRead = useCallback((result: PdfPreviewResult | null): void => {
-    setPreview(result);
-    setReading(false);
-  }, []);
+  const cancelEdit = (): void => {
+    setMessage(null);
+    setEditingId(null);
+  };
 
-  const onUpload = async (event: FormEvent): Promise<void> => {
-    event.preventDefault();
-    if (!file) {
+  const uploadBook = async (draft: BookFormDraft): Promise<void> => {
+    if (!draft.file) {
       setMessage({ text: "Choose a PDF first", tone: "error" });
       return;
     }
@@ -62,22 +80,36 @@ const LibraryPage = (): ReactElement => {
     setMessage(null);
 
     const form = new FormData();
-    form.set("file", file);
-    form.set("title", title);
-    form.set("authorName", authorName);
-    form.set("language", language);
-    if (pageStart) form.set("pageStart", pageStart);
-    if (pageEnd) form.set("pageEnd", pageEnd);
+    form.set("file", draft.file);
+    form.set("title", draft.title);
+    draft.authors.forEach((name) => {
+      const trimmed = name.trim();
+      if (trimmed) form.append("authors", trimmed);
+    });
+    form.set("language", draft.language);
+    form.set("categoryId", draft.categoryId);
+    form.set("subcategoryId", draft.subcategoryId);
+    if (draft.subcategoryId === "new") {
+      form.set("newSubcategory", draft.newSubcategory);
+    }
+    form.set("schoolTextbook", draft.schoolTextbook ? "true" : "false");
+    if (draft.schoolTextbook) form.set("grade", draft.grade);
+    if (draft.publishedYear.trim()) {
+      form.set("publishedYear", draft.publishedYear.trim());
+    }
+    if (draft.pageStart) form.set("pageStart", draft.pageStart);
+    if (draft.pageEnd) form.set("pageEnd", draft.pageEnd);
     // The first page as an image, saved next to the original PDF.
-    if (preview?.cover) form.set("cover", preview.cover, "cover");
+    if (draft.cover) form.set("cover", draft.cover, "cover");
 
     const response = await fetch("/api/admin/books", {
       method: "POST",
       body: form,
     });
-    const data = (await response.json()) as {
+    const data = (await response.json().catch(() => ({}))) as {
       bookId?: string;
       error?: string;
+      totalPages?: number;
       pageStart?: number;
       pageEnd?: number;
     };
@@ -88,24 +120,106 @@ const LibraryPage = (): ReactElement => {
       return;
     }
 
+    const saved =
+      data.totalPages === undefined
+        ? null
+        : `${data.totalPages} ${data.totalPages === 1 ? "page" : "pages"}`;
     setMessage({
-      text: `Queued pages ${data.pageStart}-${data.pageEnd}. Opening book…`,
+      text:
+        saved && data.pageStart !== undefined && data.pageEnd !== undefined
+          ? `Saved ${saved}. Queued ${data.pageStart}–${data.pageEnd} for digitizing. Opening book…`
+          : "Book uploaded. Opening…",
       tone: "info",
     });
-    setTitle("");
-    setAuthorName("");
-    setPageStart("");
-    setPageEnd("");
-    chooseFile(null);
     await loadBooks();
     if (data.bookId) {
       window.location.href = `/admin/library/${data.bookId}`;
     }
   };
 
+  const saveBook = async (bookId: string, draft: BookFormDraft): Promise<void> => {
+    setBusy(true);
+    setMessage(null);
+    const response = await fetch(`/api/admin/books/${bookId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: draft.title,
+        authors: draft.authors,
+        language: draft.language,
+        categoryId: draft.categoryId,
+        subcategoryId: draft.subcategoryId,
+        newSubcategory: draft.newSubcategory,
+        schoolTextbook: draft.schoolTextbook,
+        grade: draft.grade,
+        publishedYear: draft.publishedYear,
+      }),
+    });
+    const data = (await response.json()) as {
+      book?: LibraryBook;
+      error?: string;
+    };
+
+    setBusy(false);
+    if (!response.ok) {
+      setMessage({ text: data.error ?? "Could not save the book", tone: "error" });
+      return;
+    }
+
+    setEditingId(null);
+    setSaved(data.book?.title ?? draft.title.trim());
+    await loadBooks();
+  };
+
+  const onSubmit = (draft: BookFormDraft): void => {
+    if (editing) {
+      void saveBook(editing.id, draft);
+      return;
+    }
+    void uploadBook(draft);
+  };
+
+  const deleteBook = async (book: LibraryBook): Promise<void> => {
+    if (
+      !window.confirm(
+        `Delete “${book.title}”? This removes the book, its pages, and the original PDF.`,
+      )
+    ) {
+      return;
+    }
+    setDeletingId(book.id);
+    setMessage(null);
+    setSaved(null);
+    const response = await fetch(`/api/admin/books/${book.id}`, {
+      method: "DELETE",
+    });
+    const data = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      title?: string;
+    };
+    setDeletingId(null);
+    if (!response.ok) {
+      setMessage({
+        text: data.error ?? "Could not delete the book",
+        tone: "error",
+      });
+      return;
+    }
+    if (editingId === book.id) {
+      setEditingId(null);
+    }
+    forgetBookDetail(book.id);
+    setSaved(null);
+    setMessage({
+      text: `Deleted ${data.title ?? book.title}`,
+      tone: "info",
+    });
+    await loadBooks();
+  };
+
   return (
     <AdminGate>
-      {/* The book list leads. Upload is a side column from lg and drops below the list under it. */}
+      {/* The book list leads. Upload and edit share the side column, and drop below the list under lg. */}
       <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-11">
         <section aria-labelledby="library-heading">
           <div className="flex items-end justify-between gap-4">
@@ -117,13 +231,25 @@ const LibraryPage = (): ReactElement => {
                 Library
               </h2>
               <p className="mt-1 text-sm text-[var(--text-secondary)]">
-                Grade 9 Political Geography — Kyrgyz & Russian
+                Kyrgyz and Russian books
               </p>
             </div>
-            <Button variant="ghost" onClick={() => void loadBooks()}>
-              Refresh
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Refresh"
+              title="Refresh"
+              onClick={() => void loadBooks()}
+            >
+              <RefreshIcon />
             </Button>
           </div>
+
+          {saved ? (
+            <Notice tone="info" className="mt-4">
+              Saved {saved}
+            </Notice>
+          ) : null}
 
           {books.length === 0 ? (
             <p className="mt-6 border-t border-[var(--border-hairline)] pt-6 text-[var(--text-secondary)]">
@@ -131,129 +257,89 @@ const LibraryPage = (): ReactElement => {
             </p>
           ) : (
             <ul className="mt-6 divide-y divide-[var(--border-hairline)] overflow-hidden rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)]">
-              {books.map((book) => (
-                <li
-                  key={book.id}
-                  className="relative flex items-start gap-4 px-4 py-4 transition-colors hover:bg-[var(--bg-hover)] active:bg-[var(--bg-hover)] sm:items-center sm:px-6"
-                >
-                  <BookCover url={book.coverImageUrl} className="h-16 w-12" />
-                  {/* On phones the status sits under the title, so the title keeps the row's width. */}
-                  <div className="min-w-0 flex-1 sm:flex sm:items-center sm:justify-between sm:gap-4">
-                    <div className="min-w-0">
-                      <Link
-                        className="text-lg font-semibold after:absolute after:inset-0"
-                        href={`/admin/library/${book.id}`}
-                      >
-                        {book.title}
-                      </Link>
-                      <p className="mt-1 font-mono text-xs text-[var(--text-secondary)]">
-                        {book.language.toUpperCase()} · grade {book.grade} ·{" "}
-                        {book.subject}
-                      </p>
+              {books.map((book) => {
+                const selected = editing?.id === book.id;
+                return (
+                  <li
+                    key={book.id}
+                    className={`relative flex items-start gap-4 px-4 py-4 transition-colors sm:items-center sm:px-6 ${
+                      selected
+                        ? "bg-[var(--bg-hover)]"
+                        : "hover:bg-[var(--bg-hover)] active:bg-[var(--bg-hover)]"
+                    }`}
+                  >
+                    <BookCover url={book.coverImageUrl} className="h-16 w-12" />
+                    {/* On phones the status sits under the title, so the title keeps the row's width. */}
+                    <div className="min-w-0 flex-1 sm:flex sm:items-center sm:justify-between sm:gap-4">
+                      <div className="min-w-0">
+                        <Link
+                          className="text-lg font-semibold after:absolute after:inset-0"
+                          href={`/admin/library/${book.id}`}
+                        >
+                          {book.title}
+                        </Link>
+                        <p className="mt-1 font-mono text-xs text-[var(--text-secondary)]">
+                          {shelfLine(book)}
+                        </p>
+                        {book.authors.length > 0 ? (
+                          <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                            {book.authors.join(", ")}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="mt-2 flex shrink-0 flex-wrap items-center gap-2 sm:mt-0">
+                        <StatusPill status={book.status} />
+                        <Button
+                          variant={selected ? "secondary" : "ghost"}
+                          size="icon"
+                          className="relative z-10"
+                          aria-label={`Edit ${book.title}`}
+                          title="Edit"
+                          aria-pressed={selected}
+                          aria-controls="book-form"
+                          disabled={busy || deletingId !== null}
+                          onClick={() => openEdit(book.id)}
+                        >
+                          <PencilIcon />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="relative z-10"
+                          aria-label={
+                            deletingId === book.id
+                              ? `Deleting ${book.title}`
+                              : `Delete ${book.title}`
+                          }
+                          title={
+                            deletingId === book.id ? "Deleting…" : "Delete"
+                          }
+                          disabled={busy || deletingId !== null}
+                          onClick={() => void deleteBook(book)}
+                        >
+                          <TrashIcon />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="mt-2 shrink-0 sm:mt-0">
-                      <StatusPill status={book.status} />
-                    </div>
-                  </div>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
 
-        {/* Side column: upload, then the setting that decides how uploads are read. */}
+        {/* Side column: the book form, then the setting that decides how uploads are read. */}
         <div className="grid gap-6">
-          <Card className="max-sm:p-4">
-            <h3 className="mb-4 text-lg font-semibold">Upload textbook PDF</h3>
-            {/* One column on phones and in the side column; two across when stacked on a tablet. */}
-            <form
-              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1"
-              onSubmit={onUpload}
-            >
-              <label className="block text-sm">
-                Title
-                <input
-                  className={FIELD}
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  required
-                />
-              </label>
-              <label className="block text-sm">
-                Author
-                <input
-                  className={FIELD}
-                  value={authorName}
-                  onChange={(event) => setAuthorName(event.target.value)}
-                />
-              </label>
-              <label className="block text-sm">
-                Language
-                <select
-                  className={FIELD}
-                  value={language}
-                  onChange={(event) =>
-                    setLanguage(event.target.value as "ky" | "ru")
-                  }
-                >
-                  <option value="ky">Kyrgyz (ky)</option>
-                  <option value="ru">Russian (ru)</option>
-                </select>
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block text-sm">
-                  Page start
-                  <input
-                    className={FIELD}
-                    inputMode="numeric"
-                    value={pageStart}
-                    onChange={(event) => setPageStart(event.target.value)}
-                    placeholder="1"
-                  />
-                </label>
-                <label className="block text-sm">
-                  Page end
-                  <input
-                    className={FIELD}
-                    inputMode="numeric"
-                    value={pageEnd}
-                    onChange={(event) => setPageEnd(event.target.value)}
-                    placeholder={preview ? String(preview.pageCount) : "all"}
-                  />
-                </label>
-              </div>
-              <label className="block text-sm sm:col-span-2 lg:col-span-1">
-                PDF file
-                <input
-                  className="mt-1 block w-full text-sm text-[var(--text-secondary)] file:mr-3 file:cursor-pointer file:rounded-[var(--rounded-xs)] file:border file:border-solid file:border-[var(--border-control)] file:bg-transparent file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-[var(--text-primary)] hover:file:bg-[var(--bg-hover)] coarse:file:py-[11px]"
-                  type="file"
-                  accept="application/pdf"
-                  onChange={(event) =>
-                    chooseFile(event.target.files?.[0] ?? null)
-                  }
-                  required
-                />
-              </label>
-              {file ? (
-                <div className="sm:col-span-2 lg:col-span-1">
-                  <PdfPreview file={file} onRead={onPreviewRead} />
-                </div>
-              ) : null}
-              {message ? (
-                <Notice
-                  tone={message.tone}
-                  className="sm:col-span-2 lg:col-span-1"
-                >
-                  {message.text}
-                </Notice>
-              ) : null}
-              <div className="pt-2 sm:col-span-2 lg:col-span-1">
-                <Button type="submit" disabled={busy || reading}>
-                  {busy ? "Uploading…" : "Upload & queue"}
-                </Button>
-              </div>
-            </form>
-          </Card>
+          <BookForm
+            key={editing?.id ?? "upload"}
+            mode={editing ? "edit" : "upload"}
+            categories={categories}
+            initial={editing ? bookFormInitial(editing) : EMPTY_BOOK_FORM}
+            busy={busy}
+            message={message}
+            onSubmit={onSubmit}
+            onCancel={editing ? cancelEdit : undefined}
+          />
           <ExtractionModelCard />
         </div>
       </div>

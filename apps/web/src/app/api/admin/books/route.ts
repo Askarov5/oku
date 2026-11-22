@@ -1,12 +1,14 @@
 import { bookPages, books, ingestionJobs } from "@oku/db";
-import { desc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { isAuthorized, unauthorized } from "@/lib/auth";
+import { digitizePageSeeds } from "@/lib/book-page-range";
+import { parseBookUpload } from "@/lib/book-upload";
 import {
   COVER_MAX_BYTES,
   bookStoragePrefix,
   coverExtension,
 } from "@/lib/book-files";
+import { findOrCreateSubcategory, listCategories, listLibraryBooks } from "@/lib/catalog-db";
 import { getDb } from "@/lib/db";
 import { countPdfPages } from "@/lib/pdf";
 import { uploadObject } from "@/lib/storage";
@@ -38,9 +40,11 @@ export const GET = async (request: Request): Promise<NextResponse> => {
     return unauthorized();
   }
 
-  const db = getDb();
-  const rows = await db.select().from(books).orderBy(desc(books.createdAt));
-  return NextResponse.json({ books: rows });
+  const [libraryBooks, categories] = await Promise.all([
+    listLibraryBooks(),
+    listCategories(),
+  ]);
+  return NextResponse.json({ books: libraryBooks, categories });
 };
 
 export const POST = async (request: Request): Promise<NextResponse> => {
@@ -48,103 +52,129 @@ export const POST = async (request: Request): Promise<NextResponse> => {
     return unauthorized();
   }
 
-  const form = await request.formData();
-  const file = form.get("file");
-  const title = String(form.get("title") ?? "").trim();
-  const authorName = String(form.get("authorName") ?? "").trim() || null;
-  const language = String(form.get("language") ?? "ky");
-  const pageStartRaw = String(form.get("pageStart") ?? "").trim();
-  const pageEndRaw = String(form.get("pageEnd") ?? "").trim();
-
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: "file required" }, { status: 400 });
-  }
-  if (!title) {
-    return NextResponse.json({ error: "title required" }, { status: 400 });
-  }
-  if (language !== "ky" && language !== "ru") {
-    return NextResponse.json({ error: "language must be ky or ru" }, { status: 400 });
-  }
-
-  const bytes = await file.arrayBuffer();
-  let totalPages: number;
   try {
-    totalPages = await countPdfPages(bytes);
-  } catch {
-    return NextResponse.json(
-      { error: "This file is not a readable PDF" },
-      { status: 400 },
+    const form = await request.formData();
+    const file = form.get("file");
+    const title = String(form.get("title") ?? "").trim();
+    const pageStartRaw = String(form.get("pageStart") ?? "").trim();
+    const pageEndRaw = String(form.get("pageEnd") ?? "").trim();
+    const categories = await listCategories();
+    const parsed = parseBookUpload(
+      {
+        authors: form.getAll("authors").map((value) => String(value)),
+        language: String(form.get("language") ?? "ky"),
+        categoryId: String(form.get("categoryId") ?? ""),
+        subcategoryId: String(form.get("subcategoryId") ?? ""),
+        newSubcategory: String(form.get("newSubcategory") ?? ""),
+        schoolTextbook: form.get("schoolTextbook") === "true",
+        grade: String(form.get("grade") ?? ""),
+        publishedYear: String(form.get("publishedYear") ?? ""),
+      },
+      categories,
     );
-  }
-  const pageStart = pageStartRaw ? Number(pageStartRaw) : 1;
-  const pageEnd = pageEndRaw ? Number(pageEndRaw) : totalPages;
 
-  if (
-    !Number.isInteger(pageStart) ||
-    !Number.isInteger(pageEnd) ||
-    pageStart < 1 ||
-    pageEnd > totalPages ||
-    pageStart > pageEnd
-  ) {
-    return NextResponse.json(
-      { error: `invalid page range for ${totalPages}-page PDF` },
-      { status: 400 },
-    );
-  }
+    if (!(file instanceof File)) {
+      return NextResponse.json({ error: "file required" }, { status: 400 });
+    }
+    if (!title) {
+      return NextResponse.json({ error: "title required" }, { status: 400 });
+    }
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
+    }
 
-  const db = getDb();
-  const bookId = crypto.randomUUID();
-  // The original PDF is stored unchanged; the worker reads it and the admin can open it.
-  const sourcePdfUrl = await uploadObject({
-    key: `${bookStoragePrefix(bookId)}/source.pdf`,
-    body: Buffer.from(bytes),
-    contentType: "application/pdf",
-  });
-  const coverImageUrl = await saveCover(bookId, form.get("cover"));
+    const bytes = await file.arrayBuffer();
+    let totalPages: number;
+    try {
+      totalPages = await countPdfPages(bytes);
+    } catch {
+      return NextResponse.json(
+        { error: "This file is not a readable PDF" },
+        { status: 400 },
+      );
+    }
+    const range = digitizePageSeeds(totalPages, pageStartRaw, pageEndRaw);
+    if (!range.ok) {
+      return NextResponse.json({ error: range.error }, { status: 400 });
+    }
+    const { pageStart, pageEnd, pages } = range;
 
-  await db.insert(books).values({
-    id: bookId,
-    countryCode: "kg",
-    grade: 9,
-    subject: "political_geography",
-    language,
-    title,
-    authorName,
-    sourcePdfUrl,
-    coverImageUrl,
-    isCanonical: true,
-    status: "draft",
-  });
-
-  const pageRows = [];
-  for (let pageNumber = pageStart; pageNumber <= pageEnd; pageNumber += 1) {
-    pageRows.push({
-      bookId,
-      pageNumber,
-      status: "pending" as const,
-      stage: "queued",
+    const db = getDb();
+    const bookId = crypto.randomUUID();
+    const subcategoryId =
+      parsed.value.subcategoryId ??
+      (parsed.value.newSubcategory
+        ? await findOrCreateSubcategory(
+            parsed.value.categoryId,
+            parsed.value.newSubcategory,
+          )
+        : null);
+    if (!subcategoryId) {
+      return NextResponse.json(
+        { error: "Choose a subcategory" },
+        { status: 400 },
+      );
+    }
+    // The original PDF is stored unchanged; the worker reads it and the admin can open it.
+    const sourcePdfUrl = await uploadObject({
+      key: `${bookStoragePrefix(bookId)}/source.pdf`,
+      body: Buffer.from(bytes),
+      contentType: "application/pdf",
     });
-  }
-  await db.insert(bookPages).values(pageRows);
+    const coverImageUrl = await saveCover(bookId, form.get("cover"));
 
-  const [job] = await db
-    .insert(ingestionJobs)
-    .values({
+    await db.insert(books).values({
+      id: bookId,
+      countryCode: "kg",
+      categoryId: parsed.value.categoryId,
+      subcategoryId,
+      isSchoolTextbook: parsed.value.isSchoolTextbook,
+      grade: parsed.value.grade,
+      publishedYear: parsed.value.publishedYear,
+      authors: parsed.value.authors,
+      language: parsed.value.language,
+      title,
+      sourcePdfUrl,
+      coverImageUrl,
+      isCanonical: true,
+      status: "draft",
+    });
+
+    // Every PDF page is kept on the book; only the digitize range is queued for AI.
+    await db.insert(bookPages).values(
+      pages.map((page) => ({
+        bookId,
+        pageNumber: page.pageNumber,
+        status: page.status,
+        stage: page.stage,
+      })),
+    );
+
+    const [job] = await db
+      .insert(ingestionJobs)
+      .values({
+        bookId,
+        status: "queued",
+        pageStart,
+        pageEnd,
+        totalPages: pageEnd - pageStart + 1,
+        completedPages: 0,
+        failedPages: 0,
+      })
+      .returning();
+
+    return NextResponse.json({
       bookId,
-      status: "queued",
+      jobId: job?.id,
+      totalPages,
       pageStart,
       pageEnd,
-      totalPages: pageEnd - pageStart + 1,
-      completedPages: 0,
-      failedPages: 0,
-    })
-    .returning();
-
-  return NextResponse.json({
-    bookId,
-    jobId: job?.id,
-    totalPages,
-    pageStart,
-    pageEnd,
-  });
+    });
+  } catch (error) {
+    console.error("POST /api/admin/books failed", error);
+    return NextResponse.json(
+      { error: "Upload failed. Check the server log and try again." },
+      { status: 500 },
+    );
+  }
 };

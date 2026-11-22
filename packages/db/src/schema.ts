@@ -21,6 +21,8 @@ export const bookPageStatusEnum = pgEnum("book_page_status", [
   "extracted",
   "reviewed",
   "failed",
+  /** Kept on the book from the original PDF; not sent to AI yet. */
+  "stored",
 ]);
 export const ingestionJobStatusEnum = pgEnum("ingestion_job_status", [
   "queued",
@@ -40,6 +42,19 @@ export interface CountryConfigJson {
   nationalExam: string;
 }
 
+export const categories = pgTable("categories", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+});
+
+export const subcategories = pgTable("subcategories", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  categoryId: text("category_id")
+    .notNull()
+    .references(() => categories.id),
+  name: text("name").notNull(),
+});
+
 export const countries = pgTable("countries", {
   code: text("code").primaryKey(),
   name: text("name").notNull(),
@@ -54,11 +69,19 @@ export const books = pgTable("books", {
   countryCode: text("country_code")
     .notNull()
     .references(() => countries.code),
-  grade: integer("grade").notNull(),
-  subject: text("subject").notNull(),
+  categoryId: text("category_id")
+    .notNull()
+    .references(() => categories.id),
+  subcategoryId: uuid("subcategory_id")
+    .notNull()
+    .references(() => subcategories.id),
+  /** Grade is set only when this is a school textbook. */
+  isSchoolTextbook: boolean("is_school_textbook").notNull().default(false),
+  grade: integer("grade"),
+  publishedYear: integer("published_year"),
+  authors: text("authors").array().notNull(),
   language: bookLanguageEnum("language").notNull(),
   title: text("title").notNull(),
-  authorName: text("author_name"),
   /** The uploaded PDF, stored unchanged. */
   sourcePdfUrl: text("source_pdf_url").notNull(),
   /** First page of the PDF as an image, made at upload. Null for books uploaded without one. */

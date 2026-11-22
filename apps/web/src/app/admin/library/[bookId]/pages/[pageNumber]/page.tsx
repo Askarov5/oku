@@ -1,13 +1,22 @@
 "use client";
 
 import type { BookPage } from "@oku/db";
-import { Notice, StatusPill } from "@oku/ui";
+import {
+  Button,
+  Card,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  Notice,
+  StatusPill,
+  buttonClasses,
+} from "@oku/ui";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { ReactElement } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { AdminGate } from "@/components/admin-gate";
 import { PageReviewEditor } from "@/components/page-review-editor";
+import { SourcePdfPage } from "@/components/source-pdf-page";
 import { readPageJson, readingHref, useBookOutline } from "@/lib/book-outline";
 import { pageLabel } from "@/lib/page-label";
 import { useBookDetail } from "@/lib/use-book-detail";
@@ -35,6 +44,47 @@ const readingNote = (stage: string | null): string => {
   }
 };
 
+interface PagerLinkProps {
+  href: string | null;
+  direction: "previous" | "next";
+}
+
+const PagerLink = ({ href, direction }: PagerLinkProps): ReactElement => {
+  const label = direction === "previous" ? "Previous" : "Next";
+  const content = (
+    <>
+      {direction === "previous" ? <ChevronLeftIcon /> : null}
+      <span className="hidden sm:inline">{label}</span>
+      {direction === "next" ? <ChevronRightIcon /> : null}
+    </>
+  );
+
+  if (!href) {
+    return (
+      <span
+        aria-hidden="true"
+        className={buttonClasses({
+          variant: "ghost",
+          size: "icon",
+          className: "opacity-40",
+        })}
+      >
+        {content}
+      </span>
+    );
+  }
+
+  return (
+    <Link
+      href={href}
+      aria-label={`${label} page`}
+      className={buttonClasses({ variant: "ghost", size: "icon" })}
+    >
+      {content}
+    </Link>
+  );
+};
+
 const PageReviewRoute = (): ReactElement => {
   const params = useParams<{ bookId: string; pageNumber: string }>();
   const bookId = params.bookId;
@@ -44,6 +94,7 @@ const PageReviewRoute = (): ReactElement => {
   const [error, setError] = useState<string | null>(null);
   // The stage reported while waiting, newer than the one on `loaded`.
   const [stage, setStage] = useState<string | null>(null);
+  const [digitizing, setDigitizing] = useState(false);
 
   const load = useCallback(async (): Promise<void> => {
     const response = await fetch(
@@ -60,12 +111,14 @@ const PageReviewRoute = (): ReactElement => {
 
   useEffect(() => {
     setStage(null);
+    setDigitizing(false);
     void load();
   }, [load]);
 
   // While moving between pages, the previous page must not show under the new heading.
   const page = loaded && loaded.pageNumber === pageNumber ? loaded : null;
   const retrying = page?.status === "pending";
+  const stored = page?.status === "stored";
 
   // A page left pending (just queued here, or already waiting) is followed until it settles.
   useEffect(() => {
@@ -110,7 +163,7 @@ const PageReviewRoute = (): ReactElement => {
     };
   }, [page, bookId, pageNumber, refreshBook]);
 
-  const retry = async (): Promise<void> => {
+  const digitize = async (): Promise<void> => {
     if (!page || page.status === "pending") {
       return;
     }
@@ -123,6 +176,7 @@ const PageReviewRoute = (): ReactElement => {
       return;
     }
     setError(null);
+    setDigitizing(true);
     const response = await fetch(
       `/api/admin/books/${bookId}/pages/${pageNumber}/retry`,
       {
@@ -131,13 +185,19 @@ const PageReviewRoute = (): ReactElement => {
         body: JSON.stringify({ force: page.status === "reviewed" }),
       },
     );
-    const data = (await response.json()) as { page?: BookPage; error?: string };
+    const data = (await response.json().catch(() => ({}))) as {
+      page?: BookPage;
+      error?: string;
+    };
     if (!response.ok || !data.page) {
-      setError(data.error ?? "Retry failed");
+      setDigitizing(false);
+      setError(data.error ?? (stored ? "Digitize failed" : "Retry failed"));
       return;
     }
     setStage(data.page.stage);
     setLoaded(data.page);
+    setDigitizing(false);
+    void refreshBook();
   };
 
   const initialJson = page ? readPageJson(page) : null;
@@ -160,15 +220,22 @@ const PageReviewRoute = (): ReactElement => {
       <div className="mb-6 lg:mb-2">
         <Link
           href={`/admin/library/${bookId}`}
-          className="text-sm text-[var(--text-secondary)] hover:text-[var(--accent-ink)] coarse:inline-flex coarse:min-h-[44px] coarse:items-center"
+          className="inline-flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--accent-ink)] coarse:min-h-[44px]"
         >
-          ← Book pages
+          <ChevronLeftIcon />
+          Book pages
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 coarse:mt-0">
           <h2 className="text-2xl font-bold tracking-tight">
-            Review {pageLabel(pageNumber, printedPage)}
+            {stored ? "Saved" : "Review"}{" "}
+            {pageLabel(pageNumber, printedPage)}
           </h2>
-          {page ? <StatusPill status={page.status} /> : null}
+          {page ? (
+            <StatusPill
+              status={page.status}
+              label={page.status === "stored" ? "Saved" : undefined}
+            />
+          ) : null}
           {printedPage && printedPage !== String(pageNumber) ? (
             <span className="font-mono text-xs tabular-nums text-[var(--text-secondary)]">
               pdf {pageNumber}
@@ -195,6 +262,46 @@ const PageReviewRoute = (): ReactElement => {
         error ? null : (
           <p className="text-[var(--text-secondary)]">Loading page…</p>
         )
+      ) : stored && book ? (
+        <div className="flex flex-col gap-6">
+          <div className="sticky bottom-0 z-10 order-last flex flex-wrap items-center gap-x-2 gap-y-2 border-t border-[var(--border-hairline)] bg-[var(--bg-canvas)] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 short:static lg:bottom-auto lg:top-0 lg:order-first lg:gap-x-3 lg:border-b lg:border-t-0 lg:pb-3">
+            <nav aria-label="Pages of this book" className="flex gap-2">
+              <PagerLink href={pageHref(previousPage)} direction="previous" />
+              <PagerLink href={pageHref(nextPage)} direction="next" />
+            </nav>
+            <p className="text-sm text-[var(--text-secondary)]">
+              Saved from the original PDF. Digitize when you want AI to read it.
+            </p>
+            <div className="ml-auto">
+              <Button
+                disabled={digitizing}
+                onClick={() => void digitize()}
+              >
+                {digitizing ? "Queuing…" : "Digitize"}
+              </Button>
+            </div>
+          </div>
+          <Card padded={false} className="overflow-hidden">
+            <div className="flex min-h-[45px] items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
+              <h3 className="text-sm font-semibold">Original page</h3>
+              <a
+                href={book.book.sourcePdfUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex min-h-[44px] items-center text-sm text-[var(--text-secondary)] underline decoration-[var(--border-control)] underline-offset-4 hover:text-[var(--accent-ink)]"
+              >
+                Open PDF
+              </a>
+            </div>
+            <div className="bg-[var(--bg-canvas)] p-4">
+              <SourcePdfPage
+                url={book.book.sourcePdfUrl}
+                pageNumber={pageNumber}
+                className="mx-auto max-w-[640px]"
+              />
+            </div>
+          </Card>
+        </div>
       ) : (
         <PageReviewEditor
           key={`${page.id}-${page.updatedAt}`}
@@ -206,7 +313,7 @@ const PageReviewRoute = (): ReactElement => {
           nextHref={pageHref(nextPage)}
           retrying={retrying}
           activity={retrying ? readingNote(stage ?? page.stage) : null}
-          onRetry={() => void retry()}
+          onRetry={() => void digitize()}
           onSaved={() => {
             void load();
             void refreshBook();
