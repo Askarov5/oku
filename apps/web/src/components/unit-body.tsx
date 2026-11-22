@@ -1,13 +1,14 @@
 import type {
   ImageBlock,
   PageAnchorBlock,
+  TableBlock,
   UnitBlock,
 } from "@oku/shared-types";
 import Link from "next/link";
 import type { ReactElement } from "react";
-import Markdown from "react-markdown";
 import type { Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { RichText } from "@/components/rich-text";
+import { TableView } from "@/components/table-view";
 import { pageAnchorId } from "@/lib/book-outline";
 import { pageLabel } from "@/lib/page-label";
 
@@ -15,6 +16,8 @@ interface UnitBodyProps {
   body: UnitBlock[];
   /** Where a page marker leads, e.g. that page's review screen. */
   pageHref: (pageNumber: number) => string;
+  /** The unit title's level, so headings in the text start below it. */
+  headingLevel?: number;
 }
 
 interface PageMarkerProps {
@@ -25,6 +28,7 @@ interface PageMarkerProps {
 type Segment =
   | { kind: "markdown"; id: string; markdown: string }
   | { kind: "image"; block: ImageBlock }
+  | { kind: "table"; block: TableBlock }
   | { kind: "anchor"; block: PageAnchorBlock };
 
 /* An in-text page marker travels through Markdown as a link with this prefix. */
@@ -51,6 +55,10 @@ const toSegments = (body: UnitBlock[]): Segment[] => {
     }
     if (block.type === "markdown") {
       segments.push({ kind: "markdown", id: block.id, markdown: block.markdown });
+      continue;
+    }
+    if (block.type === "table") {
+      segments.push({ kind: "table", block });
       continue;
     }
 
@@ -89,64 +97,10 @@ const PageMarker = ({ anchor, href }: PageMarkerProps): ReactElement => (
   </div>
 );
 
-/*
- * The unit title above the body is the page's h2, so headings written in the
- * Markdown start one level below it.
- */
-const markdownComponents = (
+/** Page markers that ride inside a paragraph are links with the oku-page prefix. */
+const pageAnchorComponents = (
   pageHref: (pageNumber: number) => string,
 ): Components => ({
-  h1: ({ node: _node, ...props }) => (
-    <h3 className="mb-3 mt-8 text-xl font-bold tracking-tight" {...props} />
-  ),
-  h2: ({ node: _node, ...props }) => (
-    <h4 className="mb-3 mt-8 text-lg font-semibold" {...props} />
-  ),
-  h3: ({ node: _node, ...props }) => (
-    <h5 className="mb-2 mt-6 font-semibold" {...props} />
-  ),
-  h4: ({ node: _node, ...props }) => (
-    <h6 className="mb-2 mt-6 font-semibold" {...props} />
-  ),
-  p: ({ node: _node, ...props }) => <p className="my-4" {...props} />,
-  ul: ({ node: _node, ...props }) => (
-    <ul className="my-4 list-disc space-y-1 pl-6" {...props} />
-  ),
-  ol: ({ node: _node, ...props }) => (
-    <ol className="my-4 list-decimal space-y-1 pl-6" {...props} />
-  ),
-  blockquote: ({ node: _node, ...props }) => (
-    <blockquote
-      className="my-4 rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] px-4 text-[var(--text-secondary)]"
-      {...props}
-    />
-  ),
-  hr: ({ node: _node, ...props }) => (
-    <hr className="my-6 border-[var(--border-hairline)]" {...props} />
-  ),
-  table: ({ node: _node, ...props }) => (
-    <div className="my-6 overflow-x-auto">
-      <table className="w-full border-collapse text-sm" {...props} />
-    </div>
-  ),
-  th: ({ node: _node, ...props }) => (
-    <th
-      className="border border-[var(--border-hairline)] bg-[var(--bg-canvas)] px-3 py-2 text-left font-semibold"
-      {...props}
-    />
-  ),
-  td: ({ node: _node, ...props }) => (
-    <td
-      className="border border-[var(--border-hairline)] px-3 py-2 align-top"
-      {...props}
-    />
-  ),
-  code: ({ node: _node, ...props }) => (
-    <code className="font-mono text-[0.9em]" {...props} />
-  ),
-  pre: ({ node: _node, ...props }) => (
-    <pre className="my-4 overflow-x-auto text-sm" {...props} />
-  ),
   a: ({ node: _node, href, children, ...props }) => {
     if (href?.startsWith(INLINE_ANCHOR)) {
       const pageNumber = Number(href.slice(INLINE_ANCHOR.length));
@@ -172,8 +126,12 @@ const markdownComponents = (
   },
 });
 
-export const UnitBody = ({ body, pageHref }: UnitBodyProps): ReactElement => {
-  const components = markdownComponents(pageHref);
+export const UnitBody = ({
+  body,
+  pageHref,
+  headingLevel = 2,
+}: UnitBodyProps): ReactElement => {
+  const components = pageAnchorComponents(pageHref);
 
   return (
     <div className="max-w-[70ch] text-base leading-7">
@@ -207,14 +165,19 @@ export const UnitBody = ({ body, pageHref }: UnitBodyProps): ReactElement => {
             </figure>
           );
         }
+        if (segment.kind === "table") {
+          const { block } = segment;
+          return (
+            <TableView key={block.id} caption={block.caption} rows={block.rows} />
+          );
+        }
         return (
-          <Markdown
+          <RichText
             key={segment.id}
-            remarkPlugins={[remarkGfm]}
+            markdown={segment.markdown}
             components={components}
-          >
-            {segment.markdown}
-          </Markdown>
+            headingLevel={headingLevel}
+          />
         );
       })}
     </div>

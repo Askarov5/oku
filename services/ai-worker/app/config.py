@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     r2_public_base_url: str = "http://localhost:9000/oku-media"
     r2_force_path_style: bool = True
     gemini_api_key: str = ""
+    # Other LiteLLM providers. A model id such as openai/gpt-4.1 is used only
+    # when that provider's key is set here and in the web app.
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
     # LiteLLM model id for page extraction, used when no model has been saved in
     # the admin (the saved one wins). Google no longer serves 2.5 Flash to new
     # keys. 3.8 Flash transcribes equally well but was overloaded when this was

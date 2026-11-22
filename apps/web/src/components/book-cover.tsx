@@ -5,6 +5,8 @@ interface BookCoverProps {
   url: string | null;
   /** Size classes, e.g. `h-16 w-12`. */
   className?: string;
+  /** Load immediately when the cover is in the first screen. */
+  eager?: boolean;
 }
 
 const FRAME =
@@ -14,12 +16,13 @@ const FRAME =
 export const BookCover = ({
   url,
   className = "",
+  eager = false,
 }: BookCoverProps): ReactElement =>
   url ? (
     <img
       src={url}
       alt=""
-      loading="lazy"
+      loading={eager ? "eager" : "lazy"}
       decoding="async"
       className={`${FRAME} object-cover object-top ${className}`}
     />

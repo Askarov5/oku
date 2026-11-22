@@ -89,7 +89,7 @@
   * Allows retrying failed pages individually without overwriting human-reviewed pages.
 * **`app_settings`** (settings an admin changes while the app runs)
   * `key` (PK), `value` (JSONB), `updated_at`
-  * `extraction_model`: the LiteLLM id of the model that reads pages (e.g. `gemini/gemini-3.6-flash`). Set in the admin library; the AI worker reads it at the start of each extraction job and records it on every page it extracts.
+  * `extraction_model`: the LiteLLM id of the model that reads pages (e.g. `gemini/gemini-3.6-flash`, or `openai/…` / `anthropic/…` when that provider's API key is set). Set in the admin library; the AI worker reads it at the start of each extraction job and records it on every page it extracts.
 * **`units`** (= 1 Class / Lesson)
   * `id` (UUID PK), `book_id` (FK), `quarter` (`1..4`), `order_index`
   * `header` (JSONB — `title`, page range and printed page labels), `body` (JSONB — Markdown blocks, components, and page anchors), `learning_objectives` (JSONB)

@@ -1,4 +1,5 @@
 export * from "./block-ast.js";
+export * from "./table-lift.js";
 export * from "./units.js";
 
 export type BookLanguage = "ky" | "ru";

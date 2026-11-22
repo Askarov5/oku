@@ -214,7 +214,7 @@ export const LibraryRail = (): ReactElement => {
             aria-current={onBook ? "page" : undefined}
             className={rowClass(onBook)}
           >
-            <span className="line-clamp-2">{data.book.title}</span>
+            <span lang={data.book.language}>{data.book.title}</span>
           </Link>
 
           {pageCount > 0 ? (
@@ -243,7 +243,13 @@ export const LibraryRail = (): ReactElement => {
                         aria-current={active ? "page" : undefined}
                         className={`${rowClass(active)} items-baseline`}
                       >
-                        <span className="line-clamp-2 min-w-0">
+                        <span
+                          lang={data.book.language}
+                          className="min-w-0"
+                          style={{
+                            marginLeft: `${(unit.header.level - 1) * 0.75}rem`,
+                          }}
+                        >
                           {unit.header.title}
                         </span>
                         <span

@@ -5,10 +5,12 @@ import { isAuthorized, unauthorized } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import {
-  KNOWN_MODEL_OPTIONS,
+  catalogOptions,
   isModelId,
+  isRunnableModel,
   withModel,
 } from "@/lib/extraction-model";
+import type { ProviderKeys } from "@/lib/extraction-model";
 import type { ExtractionModelResponse } from "@/lib/extraction-model";
 import { listGeminiModels } from "@/lib/gemini-models";
 
@@ -28,10 +30,16 @@ export const GET = async (request: Request): Promise<NextResponse> => {
     .limit(1);
   const model = isModelId(row?.value) ? row.value : null;
 
-  const listed = await listGeminiModels(getEnv().geminiApiKey);
+  const env = getEnv();
+  const keys: ProviderKeys = {
+    gemini: env.geminiApiKey,
+    openai: env.openaiApiKey,
+    anthropic: env.anthropicApiKey,
+  };
+  const listed = await listGeminiModels(keys.gemini);
   const body: ExtractionModelResponse = {
     model,
-    options: withModel(listed ?? KNOWN_MODEL_OPTIONS, model),
+    options: withModel(catalogOptions(listed, keys), model),
     listed: listed !== null,
   };
   return NextResponse.json(body);
@@ -44,9 +52,18 @@ export const PUT = async (request: Request): Promise<NextResponse> => {
 
   const body = (await request.json().catch(() => null)) as UpdateBody | null;
   const model = body?.model;
-  if (!isModelId(model)) {
+  const env = getEnv();
+  const keys: ProviderKeys = {
+    gemini: env.geminiApiKey,
+    openai: env.openaiApiKey,
+    anthropic: env.anthropicApiKey,
+  };
+  if (typeof model !== "string" || !isRunnableModel(model, keys)) {
     return NextResponse.json(
-      { error: "Choose a Gemini model, for example gemini/gemini-3.6-flash" },
+      {
+        error:
+          "Choose a model, for example gemini/gemini-3.6-flash. Other providers appear after their API key is set.",
+      },
       { status: 400 },
     );
   }

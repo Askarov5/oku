@@ -45,6 +45,7 @@ describe("buildUnits", () => {
       "§ 2. Two",
     ]);
     expect(units[0]?.header).toMatchObject({
+      level: 2,
       pageStart: 1,
       pageEnd: 2,
       pageStartLabel: "3",
@@ -60,6 +61,31 @@ describe("buildUnits", () => {
       "page_anchor",
       "markdown",
     ]);
+  });
+
+  it("ranks a chapter above its lesson", () => {
+    const units = buildUnits(
+      [
+        page(1, [
+          header("c", "II. Социалдык география"),
+          header("s", "II. 1. Калктын өсүшү"),
+        ]),
+      ],
+      "Book",
+    );
+    expect(units.map((unit) => unit.header.level)).toEqual([1, 2]);
+  });
+
+  it("keeps a level the reviewer set", () => {
+    const units = buildUnits(
+      [
+        page(1, [
+          { id: "c", type: "unit_header", title: "II. Chapter", level: 3 },
+        ]),
+      ],
+      "Book",
+    );
+    expect(units[0]?.header.level).toBe(3);
   });
 
   it("does not split units on headings inside the text", () => {

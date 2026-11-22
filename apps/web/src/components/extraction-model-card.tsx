@@ -4,13 +4,22 @@ import { Button, Card, Notice, fieldClass } from "@oku/ui";
 import type { NoticeState } from "@oku/ui";
 import type { FormEvent, ReactElement } from "react";
 import { useEffect, useState } from "react";
-import { modelLabel } from "@/lib/extraction-model";
+import { modelLabel, providerLabel, PROVIDERS } from "@/lib/extraction-model";
 import type {
   ExtractionModelResponse,
   ModelOption,
+  ProviderId,
 } from "@/lib/extraction-model";
 
 const ENDPOINT = "/api/admin/settings/extraction-model";
+
+const groupsFor = (
+  options: ModelOption[],
+): Array<{ provider: ProviderId; options: ModelOption[] }> =>
+  PROVIDERS.flatMap((provider) => {
+    const group = options.filter((option) => option.provider === provider);
+    return group.length === 0 ? [] : [{ provider, options: group }];
+  });
 
 type LoadState = "loading" | "ready" | "failed";
 
@@ -94,7 +103,7 @@ export const ExtractionModelCard = (): ReactElement => {
       ) : (
         <form className="mt-4 grid gap-4" onSubmit={onSave}>
           <label className="block text-sm">
-            Gemini model
+            Model
             <select
               className={`${fieldClass} mt-1 font-mono`}
               value={chosen}
@@ -111,10 +120,17 @@ export const ExtractionModelCard = (): ReactElement => {
                   Choose a model
                 </option>
               ) : null}
-              {options.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
+              {groupsFor(options).map((group) => (
+                <optgroup
+                  key={group.provider}
+                  label={providerLabel(group.provider)}
+                >
+                  {group.options.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </label>

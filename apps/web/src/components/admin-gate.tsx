@@ -39,7 +39,11 @@ export const AdminGate = ({ children }: AdminGateProps): ReactElement => {
   };
 
   if (!ready) {
-    return <p className="text-[var(--text-secondary)]">Checking access…</p>;
+    return (
+      <p role="status" className="text-[var(--text-secondary)]">
+        Checking access…
+      </p>
+    );
   }
 
   if (!authed) {
@@ -50,12 +54,16 @@ export const AdminGate = ({ children }: AdminGateProps): ReactElement => {
           Enter the Phase 1 ADMIN_TOKEN to manage textbook ingestion.
         </p>
         <form className="flex flex-col gap-3" onSubmit={onSubmit}>
+          <label htmlFor="admin-token" className="text-sm font-medium">
+            Admin token
+          </label>
           <input
+            id="admin-token"
             className={fieldClass}
             type="password"
             value={token}
             onChange={(event) => setToken(event.target.value)}
-            placeholder="ADMIN_TOKEN"
+            autoComplete="current-password"
           />
           {error ? <Notice tone="error">{error}</Notice> : null}
           <Button type="submit">Continue</Button>

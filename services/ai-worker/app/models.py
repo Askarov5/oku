@@ -1,7 +1,8 @@
 """Pydantic mirror of packages/shared-types/src/block-ast.ts.
 
 Book content is continuous Markdown interrupted only by components. Headings,
-lists and tables stay inside the Markdown; they are not separate blocks.
+lists and simple tables stay inside the Markdown. A table block is a grid
+GFM cannot draw.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_serializer
 
 
 def _new_id() -> str:
@@ -48,16 +49,42 @@ class ImageBlock(BaseModel):
     bbox: BBox | None = None
 
 
+class TableCell(BaseModel):
+    text: str = ""
+    colspan: int | None = Field(default=None, ge=1)
+    rowspan: int | None = Field(default=None, ge=1)
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_span(self, handler):
+        data = handler(self)
+        return {key: value for key, value in data.items() if value is not None}
+
+
+class TableRow(BaseModel):
+    header: bool = False
+    cells: list[TableCell]
+
+
+class TableBlock(BaseModel):
+    """A grid with merged or stacked header cells. Simple tables stay in Markdown."""
+
+    id: str = Field(default_factory=_new_id)
+    type: Literal["table"]
+    caption: str | None = None
+    rows: list[TableRow]
+
+
 class UnitHeaderBlock(BaseModel):
     """A new unit starts here. The title becomes the unit header, not body content."""
 
     id: str = Field(default_factory=_new_id)
     type: Literal["unit_header"]
     title: str
+    level: int = Field(default=2, ge=1, le=6)
 
 
 PageBlock = Annotated[
-    MarkdownBlock | ImageBlock | UnitHeaderBlock,
+    MarkdownBlock | ImageBlock | UnitHeaderBlock | TableBlock,
     Field(discriminator="type"),
 ]
 
@@ -88,7 +115,7 @@ class LlmImageBlock(BaseModel):
 
 
 LlmBlock = Annotated[
-    MarkdownBlock | LlmImageBlock | UnitHeaderBlock,
+    MarkdownBlock | LlmImageBlock | UnitHeaderBlock | TableBlock,
     Field(discriminator="type"),
 ]
 

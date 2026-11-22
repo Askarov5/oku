@@ -1,4 +1,8 @@
+import {
+  headingLevel,
+} from "./block-ast.js";
 import type {
+  HeadingLevel,
   PageBlock,
   PageExtractedJson,
   UnitContent,
@@ -22,11 +26,16 @@ export const buildUnits = (
 ): UnitDraft[] => {
   const drafts: UnitDraft[] = [];
 
-  const open = (title: string, page: PageExtractedJson): UnitDraft => {
+  const open = (
+    title: string,
+    level: HeadingLevel,
+    page: PageExtractedJson,
+  ): UnitDraft => {
     const draft: UnitDraft = {
       orderIndex: drafts.length,
       header: {
         title,
+        level,
         pageStart: page.pageNumber,
         pageEnd: page.pageNumber,
         pageStartLabel: page.printedPage,
@@ -45,7 +54,7 @@ export const buildUnits = (
 
     // The anchor goes in front of the first thing the page contributes.
     const unitFor = (first: PageBlock | null): UnitDraft => {
-      const unit = drafts[drafts.length - 1] ?? open(fallbackTitle, page);
+      const unit = drafts[drafts.length - 1] ?? open(fallbackTitle, 1, page);
       if (anchored) {
         return unit;
       }
@@ -68,7 +77,7 @@ export const buildUnits = (
 
     for (const block of page.blocks) {
       if (block.type === "unit_header") {
-        open(block.title, page);
+        open(block.title, headingLevel(block.title, block.level), page);
         continue;
       }
       unitFor(block).body.push(block);
