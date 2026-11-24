@@ -247,7 +247,11 @@ export const PageReviewEditor = ({
           .filter((block) => !isEmpty(block))
           .map((block) =>
             block.type === "unit_header"
-              ? { ...block, level: headingLevel(block.title, block.level) }
+              ? {
+                  ...block,
+                  level: headingLevel(block.title, block.level),
+                  levelPinned: true,
+                }
               : block,
           ),
       ),

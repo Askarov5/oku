@@ -1,4 +1,12 @@
 import { bookPages, books, ingestionJobs, units } from "@oku/db";
+import {
+  ContentsOutlineSchema,
+  PageExtractedJsonSchema,
+  applyContentsOutline,
+  type ContentsEntry,
+  type HeadingLevel,
+  type PageExtractedJson,
+} from "@oku/shared-types";
 import { asc, desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { isAuthorized, unauthorized } from "@/lib/auth";
@@ -56,6 +64,8 @@ export const GET = async (
 
 interface BookEditBody extends BookUploadFields {
   title: string;
+  contentsOutline?: ContentsEntry[] | null;
+  contentsOutlineProvided?: boolean;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -66,7 +76,7 @@ const readBookEdit = async (request: Request): Promise<BookEditBody | null> => {
   if (!isRecord(payload)) {
     return null;
   }
-  return {
+  const result: BookEditBody = {
     title: typeof payload.title === "string" ? payload.title : "",
     authors: Array.isArray(payload.authors)
       ? payload.authors.filter((item): item is string => typeof item === "string")
@@ -82,6 +92,26 @@ const readBookEdit = async (request: Request): Promise<BookEditBody | null> => {
     publishedYear:
       typeof payload.publishedYear === "string" ? payload.publishedYear : "",
   };
+  if ("contentsOutline" in payload) {
+    result.contentsOutlineProvided = true;
+    if (payload.contentsOutline === null) {
+      result.contentsOutline = null;
+    } else {
+      const parsed = ContentsOutlineSchema.safeParse(payload.contentsOutline);
+      if (!parsed.success) {
+        return null;
+      }
+      result.contentsOutline =
+        parsed.data.length === 0
+          ? null
+          : parsed.data.map((entry) => ({
+              title: entry.title,
+              level: entry.level as HeadingLevel,
+              printedPage: entry.printedPage,
+            }));
+    }
+  }
+  return result;
 };
 
 /** Updates shelf details. The stored PDF, cover, and ingested pages stay as they are. */
@@ -139,12 +169,58 @@ export const PUT = async (
       isSchoolTextbook: parsed.value.isSchoolTextbook,
       grade: parsed.value.grade,
       publishedYear: parsed.value.publishedYear,
+      ...(body.contentsOutlineProvided
+        ? { contentsOutline: body.contentsOutline ?? null }
+        : {}),
       updatedAt: new Date(),
     })
     .where(eq(books.id, bookId));
 
+  if (body.contentsOutline && body.contentsOutline.length > 0) {
+    await writeOutlineOntoHeaders(bookId, body.contentsOutline);
+  }
+
   const book = await findLibraryBook(bookId);
   return NextResponse.json({ book });
+};
+
+/** Copy TOC titles and levels onto unit headers, in reading order. */
+const writeOutlineOntoHeaders = async (
+  bookId: string,
+  entries: ContentsEntry[],
+): Promise<void> => {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(bookPages)
+    .where(eq(bookPages.bookId, bookId))
+    .orderBy(asc(bookPages.pageNumber));
+
+  const parsed: Array<{
+    id: string;
+    json: PageExtractedJson;
+  }> = [];
+  for (const row of rows) {
+    const json = PageExtractedJsonSchema.safeParse(row.extractedJson);
+    if (json.success) {
+      parsed.push({ id: row.id, json: json.data });
+    }
+  }
+  const applied = applyContentsOutline(
+    parsed.map((page) => page.json),
+    entries,
+  );
+  for (let index = 0; index < parsed.length; index += 1) {
+    const before = parsed[index];
+    const after = applied.pages[index];
+    if (!before || !after || before.json === after) {
+      continue;
+    }
+    await db
+      .update(bookPages)
+      .set({ extractedJson: after, updatedAt: new Date() })
+      .where(eq(bookPages.id, before.id));
+  }
 };
 
 /** Folder that holds a book's PDF, cover, and page images, from its stored PDF URL. */

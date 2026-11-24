@@ -1,13 +1,16 @@
 "use client";
 
+import { pageRoleLabel } from "@oku/shared-types";
 import { Button, ChevronLeftIcon, Notice, RefreshIcon, StatusPill } from "@oku/ui";
 import type { NoticeState } from "@oku/ui";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { ReactElement } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AdminGate } from "@/components/admin-gate";
 import { BookCover } from "@/components/book-cover";
+import { ContentsEditor } from "@/components/contents-editor";
+import { SpecialPagesReviewModal } from "@/components/special-pages-review-modal";
 import { pageRef, unitHref, useBookOutline } from "@/lib/book-outline";
 import { shelfLine } from "@/lib/catalog";
 import { pageLabel, pageRangeLabel } from "@/lib/page-label";
@@ -40,6 +43,14 @@ const BookDetailPage = (): ReactElement => {
   const [busy, setBusy] = useState(false);
   const [pageFilter, setPageFilter] = useState<"open" | "all">("open");
   const [confirmPublish, setConfirmPublish] = useState(false);
+  const [reviewSpecials, setReviewSpecials] = useState(false);
+  const [editContents, setEditContents] = useState(false);
+
+  useEffect(() => {
+    if (data && data.book.bodyConversionQueued === false) {
+      setReviewSpecials(true);
+    }
+  }, [data?.book.id, data?.book.bodyConversionQueued]);
 
   const retryPage = async (pageNumber: number): Promise<void> => {
     setBusy(true);
@@ -190,6 +201,24 @@ const BookDetailPage = (): ReactElement => {
                 >
                   <RefreshIcon />
                 </Button>
+                {data.book.bodyConversionQueued === false ? (
+                  <Button
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => setReviewSpecials(true)}
+                  >
+                    Review special pages
+                  </Button>
+                ) : null}
+                {outline?.contents && outline.contents.length > 0 ? (
+                  <Button
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => setEditContents(true)}
+                  >
+                    Edit TOC
+                  </Button>
+                ) : null}
                 {confirmPublish ? (
                   <>
                     <Button onClick={() => void publish()} disabled={busy}>
@@ -344,6 +373,11 @@ const BookDetailPage = (): ReactElement => {
                           <StatusPill status={page.status} label={statusName} />
                         </span>
                       </div>
+                      {page.pageRole !== "body" ? (
+                        <p className="relative z-10 text-xs text-[var(--text-secondary)]">
+                          {pageRoleLabel(page.pageRole)}
+                        </p>
+                      ) : null}
                       {page.status === "failed" || page.status === "stored" ? (
                         <Button
                           className="relative z-10 w-full"
@@ -397,6 +431,11 @@ const BookDetailPage = (): ReactElement => {
                       }}
                     >
                       {unit.header.title}
+                      {unit.header.kind && unit.header.kind !== "body" ? (
+                        <span className="ml-2 font-normal text-[var(--text-secondary)]">
+                          ({pageRoleLabel(unit.header.kind)})
+                        </span>
+                      ) : null}
                     </Link>
                     <span className="ml-auto shrink-0 font-mono text-xs tabular-nums text-[var(--text-secondary)]">
                       {pageRangeLabel(
@@ -408,6 +447,23 @@ const BookDetailPage = (): ReactElement => {
                 ))}
               </ol>
             </section>
+          ) : null}
+
+          <SpecialPagesReviewModal
+            book={data.book}
+            detail={data}
+            open={reviewSpecials}
+            onClose={() => setReviewSpecials(false)}
+            onSaved={refresh}
+          />
+          {outline ? (
+            <ContentsEditor
+              book={data.book}
+              outline={outline}
+              open={editContents}
+              onClose={() => setEditContents(false)}
+              onSaved={refresh}
+            />
           ) : null}
         </div>
       )}

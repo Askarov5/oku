@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { SpecialPageRole } from "@oku/shared-types";
 import {
   digitizePageSeeds,
   pageInDigitizeRange,
@@ -14,12 +15,13 @@ describe("digitizePageSeeds", () => {
     }
     expect(result.pageStart).toBe(1);
     expect(result.pageEnd).toBe(5);
+    expect(result.bodyConversionQueued).toBe(true);
     expect(result.pages).toEqual([
-      { pageNumber: 1, status: "pending", stage: "queued" },
-      { pageNumber: 2, status: "pending", stage: "queued" },
-      { pageNumber: 3, status: "pending", stage: "queued" },
-      { pageNumber: 4, status: "pending", stage: "queued" },
-      { pageNumber: 5, status: "pending", stage: "queued" },
+      { pageNumber: 1, status: "pending", stage: "queued", pageRole: "body" },
+      { pageNumber: 2, status: "pending", stage: "queued", pageRole: "body" },
+      { pageNumber: 3, status: "pending", stage: "queued", pageRole: "body" },
+      { pageNumber: 4, status: "pending", stage: "queued", pageRole: "body" },
+      { pageNumber: 5, status: "pending", stage: "queued", pageRole: "body" },
     ]);
   });
 
@@ -56,10 +58,34 @@ describe("digitizePageSeeds", () => {
       pageNumber: 7,
       status: "pending",
       stage: "queued",
+      pageRole: "body",
     });
     expect(result.pages.filter((page) => page.status === "stored")).toHaveLength(
       9,
     );
+  });
+
+  it("queues only specials when page roles are set", () => {
+    const roles = new Map<number, SpecialPageRole>([
+      [1, "cover"],
+      [222, "table_of_contents"],
+      [223, "table_of_contents"],
+    ]);
+    const result = digitizePageSeeds(250, "1", "250", roles);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.bodyConversionQueued).toBe(false);
+    expect(result.queuedPages).toEqual([1, 222, 223]);
+    expect(result.pages[0]).toEqual({
+      pageNumber: 1,
+      status: "pending",
+      stage: "queued",
+      pageRole: "cover",
+    });
+    expect(result.pages[1]?.status).toBe("stored");
+    expect(result.pages[221]?.pageRole).toBe("table_of_contents");
   });
 
   it("rejects a range outside the PDF", () => {

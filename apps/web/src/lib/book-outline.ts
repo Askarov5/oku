@@ -1,5 +1,14 @@
-import { PageExtractedJsonSchema, buildUnits } from "@oku/shared-types";
-import type { PageExtractedJson, UnitDraft } from "@oku/shared-types";
+import {
+  PageExtractedJsonSchema,
+  buildUnits,
+  bodyUnits,
+  matterUnits,
+  readStoredContents,
+  type ContentsEntry,
+  type HeadingLevel,
+  type PageRole,
+  type UnitDraft,
+} from "@oku/shared-types";
 import { useMemo } from "react";
 import type { PageRef } from "./page-label";
 import type { BookDetail } from "./use-book-detail";
@@ -7,19 +16,28 @@ import type { BookDetail } from "./use-book-detail";
 interface StoredPage {
   pageNumber: number;
   extractedJson: unknown;
+  pageRole?: PageRole | string;
 }
 
 export interface BookOutline {
   /** The units the book's pages form right now, whether or not they are published yet. */
   units: UnitDraft[];
+  /** Lesson units only (excludes front/back matter). */
+  body: UnitDraft[];
+  /** Cover, glossary, appendix, answers reference units. */
+  matter: UnitDraft[];
+  /** Saved or derived table of contents for the sidebar. */
+  contents: ContentsEntry[] | null;
   /** Printed page number by PDF position; null where none is recorded. */
   printed: Map<number, string | null>;
   /** Index of the unit that holds each page's anchor. Pages without content are absent. */
   unitOfPage: Map<number, number>;
+  /** Role by PDF page number. */
+  pageRoles: Map<number, PageRole>;
 }
 
 /** The extracted content of a stored page, or null while it has none in the current shape. */
-export const readPageJson = (page: StoredPage): PageExtractedJson | null => {
+export const readPageJson = (page: StoredPage) => {
   if (!page.extractedJson) {
     return null;
   }
@@ -30,12 +48,42 @@ export const readPageJson = (page: StoredPage): PageExtractedJson | null => {
 export const buildOutline = (
   pages: StoredPage[],
   bookTitle: string,
+  options: {
+    language?: "ky" | "ru";
+    contentsOutline?: unknown;
+  } = {},
 ): BookOutline => {
+  const pageRoles = new Map<number, PageRole>();
+  pages.forEach((page) => {
+    const role = (page.pageRole as PageRole | undefined) ?? "body";
+    pageRoles.set(page.pageNumber, role);
+  });
+
   const extracted = pages
     .map(readPageJson)
-    .filter((json): json is PageExtractedJson => json !== null);
+    .filter((json): json is NonNullable<typeof json> => json !== null);
 
-  const units = buildUnits(extracted, bookTitle);
+  const contents: ContentsEntry[] | null =
+    readStoredContents(options.contentsOutline) ??
+    (() => {
+      const fromToc: ContentsEntry[] = extracted.flatMap((page) => {
+        if (pageRoles.get(page.pageNumber) !== "table_of_contents") {
+          return [];
+        }
+        return (page.tocEntries ?? []).map((entry) => ({
+          title: entry.title,
+          level: entry.level as HeadingLevel,
+          printedPage: entry.printedPage,
+        }));
+      });
+      return fromToc.length > 0 ? fromToc : null;
+    })();
+
+  const units = buildUnits(extracted, bookTitle, {
+    language: options.language ?? "ky",
+    pageRoles,
+    contentsOutline: contents,
+  });
 
   const printed = new Map<number, string | null>(
     pages.map((page) => [page.pageNumber, null]),
@@ -51,7 +99,15 @@ export const buildOutline = (
     });
   });
 
-  return { units, printed, unitOfPage };
+  return {
+    units,
+    body: bodyUnits(units),
+    matter: matterUnits(units),
+    contents,
+    printed,
+    unitOfPage,
+    pageRoles,
+  };
 };
 
 /**
@@ -96,8 +152,34 @@ export const readingHref = (
     : `${unitHref(bookId, unitIndex)}#${pageAnchorId(pageNumber)}`;
 };
 
+/** Best unit (or page) link for a TOC printed page label. */
+export const contentsEntryHref = (
+  bookId: string,
+  outline: BookOutline,
+  entry: ContentsEntry,
+): string => {
+  const pageNumber = findPage(outline, entry.printedPage);
+  if (pageNumber !== null) {
+    return readingHref(bookId, outline, pageNumber);
+  }
+  const match = outline.body.find(
+    (unit) =>
+      unit.header.title.trim().toLowerCase() ===
+      entry.title.trim().toLowerCase(),
+  );
+  return match
+    ? unitHref(bookId, match.orderIndex)
+    : `/admin/library/${bookId}`;
+};
+
 export const useBookOutline = (data: BookDetail | null): BookOutline | null =>
   useMemo(
-    () => (data ? buildOutline(data.pages, data.book.title) : null),
+    () =>
+      data
+        ? buildOutline(data.pages, data.book.title, {
+            language: data.book.language,
+            contentsOutline: data.book.contentsOutline,
+          })
+        : null,
     [data],
   );

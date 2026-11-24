@@ -30,6 +30,8 @@ export interface ExtractionModelResponse {
   listed: boolean;
 }
 
+export const EXTRACTION_MODEL_ENDPOINT = "/api/admin/settings/extraction-model";
+
 /** Keys the server already holds. Empty means that provider is not offered. */
 export interface ProviderKeys {
   gemini: string;

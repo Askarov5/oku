@@ -13,70 +13,13 @@ from PIL import Image
 
 from app.config import settings
 from app.models import LlmPageResponse
+from app.prompts import (
+    normalize_cover_meta,
+    normalize_toc_entries,
+    prompt_for_role,
+)
 
 logger = logging.getLogger("oku.worker")
-
-
-PROMPT = """You are a textbook OCR and layout extractor for Kyrgyzstan Grade 9 Political Geography.
-Transcribe the page. Do NOT translate.
-Preserve Kyrgyz letters exactly: Ө ө Ү ү Ң ң and Russian Cyrillic.
-Return JSON only, in this shape:
-{
-  "printedPage": "42" | null,
-  "continuesFromPrevious": true | false,
-  "blocks": [ ... ],
-  "warnings": []
-}
-
-The page is continuous Markdown interrupted only by components. Do NOT make one
-block per paragraph or per heading.
-
-Block types, in reading order:
-- {"type": "markdown", "markdown": "..."}
-  All prose between two components goes in ONE markdown block: paragraphs
-  separated by a blank line, headings as #, ## or ###, lists, and simple
-  tables as GitHub-flavored Markdown tables (one header row, every cell on
-  one line, no merged cells). Definitions, examples and exercises are plain
-  Markdown too. When the page opens with the rest of a simple table begun on
-  the previous page, give it an empty header row (| | | |) so that no data
-  row is turned into a header.
-- {"type": "table", "caption": "1-таблица. ..." | null, "rows": [
-    {"header": true, "cells": [{"text": "Жылы", "rowspan": 2},
-      {"text": "Анын ичинен", "colspan": 2}]},
-    {"header": true, "cells": [{"text": "шаар калкы"}, {"text": "айыл калкы"}]},
-    {"header": false, "cells": [{"text": "1897"}, {"text": "63,0"}, {"text": "600,0"}]}
-  ]}
-  Use this, not a Markdown table, when a cell spans columns or rows, a header
-  cell breaks onto a second printed line, or a heading sits above subheadings.
-  The caption is the printed table label and title, or null. colspan and
-  rowspan are omitted when the cell does not span. Do not repeat the grid in
-  the markdown.
-- {"type": "image", "box_2d": [ymin, xmin, ymax, xmax],
-   "alt": "...", "ai_description": "...", "caption": "..." | null}
-  One per map, diagram, photo or chart, placed exactly where it appears between
-  the text. box_2d is the tight bounding box of the whole picture on the page,
-  on a 0-1000 scale, without its caption. alt and ai_description are written in
-  the book language; caption is the printed caption, if any.
-- {"type": "unit_header", "title": "...", "level": 1}
-  Only where a chapter or a numbered lesson/section of the book begins: a title
-  the book's own table of contents would list (for example "II. ...",
-  "II. 3. ..." or "§ 3. ..."). level is 1 to 6: 1 a part or chapter ("II. ..."),
-  2 a lesson ("II. 1. ..." or "§ 3. ..."), 3 to 6 a subsection under that
-  lesson. Write the title in one line, with its number, in normal sentence
-  capitalization even when it is printed in capitals. The title goes here and
-  is NOT repeated in the markdown. When a chapter title is followed by the
-  title of its first section, they are two unit_header blocks, the chapter at
-  level 1 and the section at level 2. Every other heading (an unnumbered
-  subheading, "questions and tasks", table titles) stays inside markdown.
-
-Page fields:
-- printedPage: the page number printed on the page, exactly as printed, or null
-  when the page carries none. This is not the position in the PDF.
-- continuesFromPrevious: true only when the page opens in the middle of a
-  sentence or paragraph carried over from the previous page.
-
-Do not invent missing content. Leave out running headers and footers.
-"""
 
 
 def _image_data_url(image: Image.Image) -> str:
@@ -479,7 +422,18 @@ def _drop_invalid_escape(match: re.Match[str]) -> str:
     return match.group(0) if match.group(1) in '"\\/bfnrtu' else match.group(1)
 
 
-def parse_page_response(content: str) -> LlmPageResponse:
+def _unit_header_as_markdown(block: dict[str, Any]) -> dict[str, Any]:
+    """Demote a stray unit_header on a non-body page into a Markdown heading."""
+    level = block.get("level", 2)
+    hashes = "#" * min(6, max(1, int(level) if isinstance(level, int) else 2))
+    return {"type": "markdown", "markdown": f"{hashes} {block.get('title', '')}".strip()}
+
+
+def parse_page_response(
+    content: str,
+    *,
+    page_role: str = "body",
+) -> LlmPageResponse:
     """Turn the model's answer into a page, keeping every block that can be kept."""
     text = content.strip()
     if text.startswith("```"):
@@ -497,26 +451,37 @@ def parse_page_response(content: str) -> LlmPageResponse:
     if not isinstance(payload, dict) or not isinstance(payload.get("blocks"), list):
         raise UnusableResponse("model answer has no list of blocks")
 
+    allow_headers = page_role == "body"
     blocks: list[dict[str, Any]] = []
     warnings = [item for item in payload.get("warnings") or [] if isinstance(item, str)]
     for raw in payload["blocks"]:
         block, warning = _normalize_block(raw)
         if block is not None and block["type"] == "markdown":
-            blocks.extend(split_numbered_headings(block["markdown"]))
+            if allow_headers:
+                blocks.extend(split_numbered_headings(block["markdown"]))
+            else:
+                blocks.append(block)
+        elif block is not None and block["type"] == "unit_header" and not allow_headers:
+            blocks.append(_unit_header_as_markdown(block))
         elif block is not None:
             blocks.append(block)
         if warning and warning not in warnings:
             warnings.append(warning)
 
     printed = payload.get("printedPage")
-    return LlmPageResponse.model_validate(
-        {
-            "printedPage": printed if isinstance(printed, (str, int)) else None,
-            "continuesFromPrevious": payload.get("continuesFromPrevious") is True,
-            "blocks": blocks,
-            "warnings": warnings,
-        }
-    )
+    result: dict[str, Any] = {
+        "printedPage": printed if isinstance(printed, (str, int)) else None,
+        "continuesFromPrevious": payload.get("continuesFromPrevious") is True,
+        "blocks": blocks,
+        "warnings": warnings,
+    }
+    toc_entries = normalize_toc_entries(payload.get("tocEntries"))
+    if toc_entries:
+        result["tocEntries"] = toc_entries
+    cover_meta = normalize_cover_meta(payload.get("coverMeta"))
+    if cover_meta:
+        result["coverMeta"] = cover_meta
+    return LlmPageResponse.model_validate(result)
 
 
 _RETRY_HINT = re.compile(r"retry(?:Delay)?\W{0,6}(?:in )?(\d+(?:\.\d+)?)\s*s", re.IGNORECASE)
@@ -530,7 +495,14 @@ def retry_delay(error: Exception, attempt: int) -> float:
     return min(5.0 * 2 ** (attempt - 1), 60.0) + random.uniform(0, 2)
 
 
-def _complete(*, page_number: int, language: str, image_url: str, model: str) -> str:
+def _complete(
+    *,
+    page_number: int,
+    language: str,
+    image_url: str,
+    model: str,
+    prompt: str,
+) -> str:
     import litellm
 
     reasoning: dict[str, Any] = {}
@@ -554,7 +526,7 @@ def _complete(*, page_number: int, language: str, image_url: str, model: str) ->
                 "content": [
                     {
                         "type": "text",
-                        "text": f"{PROMPT}\npdfPagePosition={page_number}\nlanguage={language}",
+                        "text": f"{prompt}\npdfPagePosition={page_number}\nlanguage={language}",
                     },
                     {"type": "image_url", "image_url": {"url": image_url}},
                 ],
@@ -581,6 +553,10 @@ def extract_page(
     language: str,
     image: Image.Image,
     model: str | None = None,
+    page_role: str = "body",
+    book_title: str = "Textbook",
+    grade: int | None = None,
+    toc_hint: str = "",
 ) -> LlmPageResponse:
     model = model or settings.llm_model
     if uses_mock(model):
@@ -598,6 +574,13 @@ def extract_page(
         litellm.ServiceUnavailableError,
     )
     image_url = _image_data_url(image)
+    prompt = prompt_for_role(
+        page_role,
+        title=book_title or "Textbook",
+        language=language,
+        grade=grade,
+        toc_hint=toc_hint,
+    )
 
     for attempt in range(1, settings.llm_max_attempts + 1):
         try:
@@ -606,8 +589,9 @@ def extract_page(
                 language=language,
                 image_url=image_url,
                 model=model,
+                prompt=prompt,
             )
-            return parse_page_response(content)
+            return parse_page_response(content, page_role=page_role)
         except UnusableResponse as exc:
             error, wait = exc, 0.0
         except transient as exc:

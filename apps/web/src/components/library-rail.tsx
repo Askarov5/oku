@@ -1,11 +1,12 @@
 "use client";
 
 import type { BookPage } from "@oku/db";
-import { Button } from "@oku/ui";
+import { Button, PencilIcon } from "@oku/ui";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { FormEvent, ReactElement, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
+import { ContentsEditor } from "@/components/contents-editor";
 import {
   findPage,
   pageRef,
@@ -168,16 +169,17 @@ const GoToPage = ({ bookId, outline }: GoToPageProps): ReactElement => {
 };
 
 /*
- * The rail is the book's table of contents: one row per unit, in book order.
- * Any page can still be opened, from its unit or by number.
+ * The rail is the book's table of contents: reusable TOC when saved, body
+ * units otherwise, plus a Front & Back Matter group for reference units.
  */
 export const LibraryRail = (): ReactElement => {
   const pathname = usePathname();
   const { bookId, pageNumber, unitIndex } = readLocation(pathname);
-  const { data } = useBookDetail(bookId);
+  const { data, refresh } = useBookDetail(bookId);
   const outline = useBookOutline(data);
   const activeRow = useRef<HTMLAnchorElement | null>(null);
   const pageCount = data?.pages.length ?? 0;
+  const [contentsOpen, setContentsOpen] = useState(false);
 
   useEffect(() => {
     activeRow.current?.scrollIntoView({ block: "nearest" });
@@ -196,6 +198,11 @@ export const LibraryRail = (): ReactElement => {
     data && outline
       ? data.pages.filter((page) => !outline.unitOfPage.has(page.pageNumber))
       : [];
+
+  const tocEntries = outline?.contents ?? null;
+  const bodyUnits = outline?.body ?? [];
+  const matter = outline?.matter ?? [];
+  const showHeaders = bodyUnits.length > 0;
 
   return (
     <nav aria-label="Library" className="flex flex-col">
@@ -221,20 +228,100 @@ export const LibraryRail = (): ReactElement => {
             <GoToPage bookId={bookId} outline={outline} />
           ) : null}
 
-          {outline.units.length > 0 ? (
+          {showHeaders || (tocEntries && tocEntries.length > 0) ? (
             <>
-              <p className={GROUP_LABEL}>Contents</p>
+              <div className="flex items-center justify-between gap-2 px-3 pb-1 pt-4">
+                <p className="text-xs font-medium text-[var(--text-on-rail-muted)]">
+                  Contents
+                </p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="text-[var(--text-on-rail-muted)] hover:bg-[var(--rail-hover)] hover:text-[var(--text-on-rail)]"
+                  aria-label="Edit table of contents"
+                  title="Edit TOC"
+                  onClick={() => setContentsOpen(true)}
+                >
+                  <PencilIcon />
+                </Button>
+              </div>
               <ol className="flex flex-col gap-px">
-                {outline.units.map((unit) => {
+                {showHeaders
+                  ? bodyUnits.map((unit) => {
+                      const active = unit.orderIndex === unitIndex;
+                      const open = expandAll || unit.orderIndex === openUnit;
+                      const unitPages = open
+                        ? data.pages.filter(
+                            (page) =>
+                              outline.unitOfPage.get(page.pageNumber) ===
+                              unit.orderIndex,
+                          )
+                        : [];
+                      return (
+                        <li key={unit.orderIndex}>
+                          <Link
+                            ref={active ? activeRow : undefined}
+                            href={unitHref(bookId, unit.orderIndex)}
+                            aria-current={active ? "page" : undefined}
+                            className={`${rowClass(active)} items-baseline`}
+                          >
+                            <span
+                              lang={data.book.language}
+                              className="min-w-0"
+                              style={{
+                                marginLeft: `${(unit.header.level - 1) * 0.75}rem`,
+                              }}
+                            >
+                              {unit.header.title}
+                            </span>
+                            <span
+                              className={`ml-auto shrink-0 font-mono text-xs tabular-nums ${active ? "" : "text-[var(--text-on-rail-muted)]"}`.trim()}
+                            >
+                              {pageRangeLabel(
+                                pageRef(outline, unit.header.pageStart),
+                                pageRef(outline, unit.header.pageEnd),
+                              )}
+                            </span>
+                          </Link>
+                          {unitPages.length > 0 ? (
+                            <PageRows
+                              bookId={bookId}
+                              pages={unitPages}
+                              outline={outline}
+                              activePage={pageNumber}
+                              activeRow={activeRow}
+                            />
+                          ) : null}
+                        </li>
+                      );
+                    })
+                  : tocEntries?.map((entry, index) => (
+                      <li key={`${entry.title}-${entry.printedPage}-${index}`}>
+                        <span
+                          lang={data.book.language}
+                          className={`${rowClass(false)} items-baseline`}
+                          style={{
+                            marginLeft: `${(entry.level - 1) * 0.75}rem`,
+                          }}
+                        >
+                          <span className="min-w-0">{entry.title}</span>
+                          <span className="ml-auto shrink-0 font-mono text-xs tabular-nums text-[var(--text-on-rail-muted)]">
+                            {entry.printedPage}
+                          </span>
+                        </span>
+                      </li>
+                    ))}
+              </ol>
+            </>
+          ) : null}
+
+          {matter.length > 0 ? (
+            <>
+              <p className={GROUP_LABEL}>Front &amp; back matter</p>
+              <ol className="flex flex-col gap-px">
+                {matter.map((unit) => {
                   const active = unit.orderIndex === unitIndex;
-                  const open = expandAll || unit.orderIndex === openUnit;
-                  const unitPages = open
-                    ? data.pages.filter(
-                        (page) =>
-                          outline.unitOfPage.get(page.pageNumber) ===
-                          unit.orderIndex,
-                      )
-                    : [];
                   return (
                     <li key={unit.orderIndex}>
                       <Link
@@ -243,13 +330,7 @@ export const LibraryRail = (): ReactElement => {
                         aria-current={active ? "page" : undefined}
                         className={`${rowClass(active)} items-baseline`}
                       >
-                        <span
-                          lang={data.book.language}
-                          className="min-w-0"
-                          style={{
-                            marginLeft: `${(unit.header.level - 1) * 0.75}rem`,
-                          }}
-                        >
+                        <span lang={data.book.language} className="min-w-0">
                           {unit.header.title}
                         </span>
                         <span
@@ -261,15 +342,6 @@ export const LibraryRail = (): ReactElement => {
                           )}
                         </span>
                       </Link>
-                      {unitPages.length > 0 ? (
-                        <PageRows
-                          bookId={bookId}
-                          pages={unitPages}
-                          outline={outline}
-                          activePage={pageNumber}
-                          activeRow={activeRow}
-                        />
-                      ) : null}
                     </li>
                   );
                 })}
@@ -280,7 +352,9 @@ export const LibraryRail = (): ReactElement => {
           {loosePages.length > 0 ? (
             <>
               <p className={GROUP_LABEL}>
-                {outline.units.length > 0 ? "Not in a unit yet" : "Pages"}
+                {showHeaders || (tocEntries && tocEntries.length > 0)
+                  ? "Not in a unit yet"
+                  : "Pages"}
               </p>
               <PageRows
                 bookId={bookId}
@@ -291,6 +365,14 @@ export const LibraryRail = (): ReactElement => {
               />
             </>
           ) : null}
+
+          <ContentsEditor
+            book={data.book}
+            outline={outline}
+            open={contentsOpen}
+            onClose={() => setContentsOpen(false)}
+            onSaved={refresh}
+          />
         </div>
       ) : null}
     </nav>

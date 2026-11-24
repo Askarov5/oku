@@ -1,7 +1,7 @@
 "use client";
 
 import type { MouseEvent, ReactElement, ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "./button";
 import { CloseIcon, MenuIcon, MoonIcon, SunIcon } from "./icons";
 
@@ -14,6 +14,18 @@ export interface ThemeShellProps {
 
 /* Must match the xl: classes below, where the fixed rail takes over from the drawer. */
 const RAIL_QUERY = "(min-width: 1280px)";
+
+/* Keep in sync with the boot script in apps/web/src/app/layout.tsx. */
+const THEME_STORAGE_KEY = "oku-theme";
+
+const readStoredTheme = (): "light" | "dark" | null => {
+  try {
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return stored === "dark" || stored === "light" ? stored : null;
+  } catch {
+    return null;
+  }
+};
 
 /*
  * xl and up: a fixed 260px cobalt rail closed by the 4px vermilion rule, with
@@ -28,18 +40,34 @@ export const ThemeShell = ({
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawer = useRef<HTMLDialogElement | null>(null);
+  const themeReady = useRef(false);
 
-  useEffect(() => {
-    const stored = window.localStorage.getItem("oku-theme");
-    if (stored === "dark" || stored === "light") {
-      setTheme(stored);
+  // The boot script has already set data-theme. Copy it before paint, and
+  // don't write storage until the person actually toggles.
+  useLayoutEffect(() => {
+    if (!themeReady.current) {
+      themeReady.current = true;
+      const stored = readStoredTheme();
+      const attr = document.documentElement.getAttribute("data-theme");
+      const next =
+        stored ?? (attr === "dark" || attr === "light" ? attr : "light");
+      if (next !== theme) {
+        setTheme(next);
+        return;
+      }
     }
-  }, []);
-
-  useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
-    window.localStorage.setItem("oku-theme", theme);
   }, [theme]);
+
+  const toggleTheme = (): void => {
+    const next = theme === "light" ? "dark" : "light";
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, next);
+    } catch {
+      // Private mode can reject storage. The attribute still updates for this visit.
+    }
+    setTheme(next);
+  };
 
   useEffect(() => {
     if (!drawerOpen) {
@@ -87,9 +115,7 @@ export const ThemeShell = ({
     <Button
       variant="rail"
       className="shrink-0"
-      onClick={() =>
-        setTheme((current) => (current === "light" ? "dark" : "light"))
-      }
+      onClick={toggleTheme}
     >
       {theme === "light" ? <MoonIcon /> : <SunIcon />}
       {theme === "light" ? "Night" : "Day"}
