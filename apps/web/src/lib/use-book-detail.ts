@@ -32,6 +32,8 @@ interface Entry {
   timer: number | null;
   fetchedAt: number;
   inflight: Promise<void> | null;
+  /** Bumped on a forced refresh so an older poll cannot overwrite newer data. */
+  generation: number;
 }
 
 const POLL_MS = 4000;
@@ -68,33 +70,50 @@ const entryFor = (bookId: string): Entry => {
     timer: null,
     fetchedAt: 0,
     inflight: null,
+    generation: 0,
   };
   entries.set(bookId, created);
   return created;
 };
 
-const fetchBook = (bookId: string): Promise<void> => {
+const fetchBook = (bookId: string, force = false): Promise<void> => {
   const entry = entryFor(bookId);
-  if (entry.inflight) {
+  if (entry.inflight && !force) {
     return entry.inflight;
   }
 
-  entry.inflight = (async (): Promise<void> => {
+  const generation = force ? entry.generation + 1 : entry.generation;
+  if (force) {
+    entry.generation = generation;
+  }
+  const handle: { request: Promise<void> | null } = { request: null };
+  handle.request = (async (): Promise<void> => {
     try {
       const response = await fetch(`/api/admin/books/${bookId}`);
+      if (entry.generation !== generation) {
+        return;
+      }
       entry.state = response.ok
         ? { data: (await response.json()) as BookDetail, failed: false }
         : { data: entry.state.data, failed: true };
     } catch {
+      if (entry.generation !== generation) {
+        return;
+      }
       entry.state = { data: entry.state.data, failed: true };
     } finally {
-      entry.fetchedAt = Date.now();
-      entry.inflight = null;
-      entry.listeners.forEach((listener) => listener());
+      if (entry.inflight === handle.request) {
+        entry.fetchedAt = Date.now();
+        entry.inflight = null;
+      }
+      if (entry.generation === generation) {
+        entry.listeners.forEach((listener) => listener());
+      }
     }
   })();
 
-  return entry.inflight;
+  entry.inflight = handle.request;
+  return handle.request;
 };
 
 export const useBookDetail = (
@@ -154,7 +173,7 @@ export const useBookDetail = (
   }, [bookId, poll]);
 
   const refresh = useCallback(
-    (): Promise<void> => (bookId ? fetchBook(bookId) : Promise.resolve()),
+    (): Promise<void> => (bookId ? fetchBook(bookId, true) : Promise.resolve()),
     [bookId],
   );
 

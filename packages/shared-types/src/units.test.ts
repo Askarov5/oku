@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PageBlock, PageExtractedJson } from "./block-ast.js";
-import { buildUnits, unitIndexForPage } from "./units.js";
+import type { PageRole } from "./page-roles.js";
+import { bodyUnits, buildUnits, matterUnits, unitIndexForPage } from "./units.js";
 
 const page = (
   pageNumber: number,
@@ -133,5 +134,52 @@ describe("buildUnits", () => {
     );
     expect(unitIndexForPage(units, 2)).toBe(0);
     expect(units[0]?.header.pageEnd).toBe(2);
+  });
+
+  it("skips TOC pages and groups reference matter", () => {
+    const roles = new Map<number, PageRole>([
+      [1, "cover"],
+      [2, "table_of_contents"],
+      [3, "body"],
+      [4, "glossary"],
+      [5, "glossary"],
+    ]);
+    const units = buildUnits(
+      [
+        page(1, [text("c", "# Title\n\nAuthor")]),
+        page(2, [text("t", "I. Chapter ........ 3")]),
+        page(3, [header("u1", "I. Chapter"), text("b", "Lesson")]),
+        page(4, [text("g1", "**Термин** — аныктама.")]),
+        page(5, [text("g2", "**Башка** — дагы.")]),
+      ],
+      "Book",
+      { language: "ky", pageRoles: roles },
+    );
+    expect(units.map((unit) => unit.header.title)).toEqual([
+      "Мукаба",
+      "I. Chapter",
+      "Глоссарий",
+    ]);
+    expect(units[0]?.header.kind).toBe("cover");
+    expect(units[2]?.header).toMatchObject({
+      kind: "glossary",
+      pageStart: 4,
+      pageEnd: 5,
+    });
+    expect(bodyUnits(units)).toHaveLength(1);
+    expect(matterUnits(units)).toHaveLength(2);
+  });
+
+  it("applies contents outline levels to body headers", () => {
+    const units = buildUnits(
+      [page(1, [{ id: "c", type: "unit_header", title: "II. Chapter", level: 2 }])],
+      "Book",
+      {
+        contentsOutline: [
+          { title: "II. Chapter", level: 1, printedPage: "3" },
+        ],
+      },
+    );
+    expect(units[0]?.header.level).toBe(1);
   });
 });

@@ -9,6 +9,7 @@ from typing import Any
 
 from app import db as dbmod
 from app.config import settings
+from app.contents import collect_toc_from_job_pages, load_contents_outline, prompt_hint
 from app.layout import DoclingLayoutDetector, NullLayoutDetector, snap_to_layout
 from app.llm import (
     EXTRACTION_MODEL_SETTING,
@@ -163,11 +164,15 @@ class IngestionPipeline:
                 return True
             # Read once per job: every page of a job is extracted by the same model.
             model = resolve_model(dbmod.get_setting(conn, EXTRACTION_MODEL_SETTING))
+            page_numbers = dbmod.job_page_numbers(job)
+            # TOC hint for body pages: prefer the saved outline, else digitized TOC.
+            all_pages = dbmod.list_pages(conn, book["id"])
+            outline = load_contents_outline(book, all_pages) or []
+            toc_hint = prompt_hint(outline)
             logger.info(
-                "job %s: pages %s-%s with %s",
+                "job %s: %s page(s) with %s",
                 job["id"],
-                job["page_start"],
-                job["page_end"],
+                len(page_numbers),
                 model_name(model),
             )
 
@@ -204,6 +209,8 @@ class IngestionPipeline:
                             pdf_bytes=pdf_bytes,
                             page_number=page_number,
                             model=model,
+                            page_role=page.get("page_role") or "body",
+                            toc_hint=toc_hint,
                         )
                         dbmod.bump_job_progress(
                             page_conn, job_id=job["id"], completed_delta=1
@@ -225,8 +232,17 @@ class IngestionPipeline:
                         )
                         return True
 
-            pages = range(job["page_start"], job["page_end"] + 1)
-            failed = sum(self._executor.map(run_page, pages))
+            failed = sum(self._executor.map(run_page, page_numbers))
+            # Auto-seed TOC from extracted table_of_contents pages when unset.
+            stored_outline = book.get("contents_outline")
+            has_saved_outline = (
+                isinstance(stored_outline, list) and len(stored_outline) > 0
+            )
+            if not has_saved_outline:
+                refreshed = dbmod.list_pages(conn, book["id"])
+                seeded = collect_toc_from_job_pages(refreshed)
+                if seeded:
+                    dbmod.save_contents_outline(conn, book["id"], seeded)
             dbmod.finish_job(conn, job_id=job["id"], failed_pages=failed)
             return True
 
@@ -238,6 +254,8 @@ class IngestionPipeline:
         pdf_bytes: bytes,
         page_number: int,
         model: str | None = None,
+        page_role: str = "body",
+        toc_hint: str = "",
     ) -> None:
         dbmod.mark_page(
             conn,
@@ -262,11 +280,17 @@ class IngestionPipeline:
             stage="extracting",
         )
 
+        grade = book.get("grade")
+        grade_n = int(grade) if isinstance(grade, int) else None
         llm = extract_page(
             page_number=page_number,
             language=book["language"],
             image=image,
             model=model,
+            page_role=page_role,
+            book_title=str(book.get("title") or "Textbook"),
+            grade=grade_n,
+            toc_hint=toc_hint if page_role == "body" else "",
         )
 
         layout_boxes = []
@@ -305,6 +329,8 @@ class IngestionPipeline:
             warnings=warnings,
             model=model_name(model),
             extractedAt=dbmod.utc_now_iso(),
+            tocEntries=llm.tocEntries,
+            coverMeta=llm.coverMeta,
         )
 
         dbmod.mark_page(
@@ -314,7 +340,7 @@ class IngestionPipeline:
             status="extracted",
             raw_image_url=page_url,
             # Keep nulls: the shared schema requires printedPage to be present.
-            extracted_json=extracted.model_dump(mode="json"),
+            extracted_json=extracted.model_dump(mode="json", exclude_none=True),
             error_message=None,
             stage="extracted",
         )

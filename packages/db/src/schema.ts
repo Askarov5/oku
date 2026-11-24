@@ -24,12 +24,28 @@ export const bookPageStatusEnum = pgEnum("book_page_status", [
   /** Kept on the book from the original PDF; not sent to AI yet. */
   "stored",
 ]);
+/** How a page is extracted: body lessons, or a special front/back-matter role. */
+export const bookPageRoleEnum = pgEnum("book_page_role", [
+  "body",
+  "table_of_contents",
+  "cover",
+  "glossary",
+  "appendix",
+  "answers",
+]);
 export const ingestionJobStatusEnum = pgEnum("ingestion_job_status", [
   "queued",
   "running",
   "completed",
   "failed",
 ]);
+
+/** One line of a saved table of contents (mirrors ContentsEntry in shared-types). */
+export interface ContentsEntryJson {
+  title: string;
+  level: number;
+  printedPage: string;
+}
 
 export interface CountryConfigJson {
   languages: Array<"ky" | "ru">;
@@ -88,6 +104,19 @@ export const books = pgTable("books", {
   coverImageUrl: text("cover_image_url"),
   isCanonical: boolean("is_canonical").notNull().default(true),
   status: bookStatusEnum("status").notNull().default("draft"),
+  /** Digitize range chosen at upload; used when Phase 2 queues body pages. */
+  digitizePageStart: integer("digitize_page_start"),
+  digitizePageEnd: integer("digitize_page_end"),
+  /**
+   * Reviewed or auto-seeded table of contents. Null until TOC pages are
+   * extracted or an admin saves one by hand.
+   */
+  contentsOutline: jsonb("contents_outline").$type<ContentsEntryJson[] | null>(),
+  /**
+   * False while special pages run first and body conversion waits for review.
+   * True once body pages are queued (or when no specials were set).
+   */
+  bodyConversionQueued: boolean("body_conversion_queued").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -104,6 +133,8 @@ export const bookPages = pgTable(
       .notNull()
       .references(() => books.id, { onDelete: "cascade" }),
     pageNumber: integer("page_number").notNull(),
+    /** Extraction prompt role; body is the default for lesson pages. */
+    pageRole: bookPageRoleEnum("page_role").notNull().default("body"),
     rawImageUrl: text("raw_image_url"),
     extractedJson: jsonb("extracted_json"),
     status: bookPageStatusEnum("status").notNull().default("pending"),
@@ -132,6 +163,11 @@ export const ingestionJobs = pgTable("ingestion_jobs", {
   status: ingestionJobStatusEnum("status").notNull().default("queued"),
   pageStart: integer("page_start").notNull(),
   pageEnd: integer("page_end").notNull(),
+  /**
+   * Exact PDF pages for this job when non-contiguous (Phase 1 specials).
+   * Null means use pageStart..pageEnd as before.
+   */
+  pageNumbers: integer("page_numbers").array(),
   totalPages: integer("total_pages").notNull(),
   completedPages: integer("completed_pages").notNull().default(0),
   failedPages: integer("failed_pages").notNull().default(0),
@@ -157,6 +193,8 @@ export interface UnitHeaderJson {
   /** The same range as printed on the pages; null where a page carries no number. */
   pageStartLabel: string | null;
   pageEndLabel: string | null;
+  /** Absent or "body" for lesson units; otherwise a front/back-matter kind. */
+  kind?: "body" | "cover" | "glossary" | "appendix" | "answers";
 }
 
 /*

@@ -179,5 +179,49 @@ def set_book_review(conn: psycopg.Connection, book_id: UUID | str) -> None:
     conn.commit()
 
 
+def list_pages(
+    conn: psycopg.Connection, book_id: UUID | str
+) -> list[dict[str, Any]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT * FROM book_pages
+            WHERE book_id = %s
+            ORDER BY page_number ASC
+            """,
+            (book_id,),
+        )
+        return list(cur.fetchall())
+
+
+def save_contents_outline(
+    conn: psycopg.Connection,
+    book_id: UUID | str,
+    outline: list[dict[str, Any]],
+) -> None:
+    """Seed the book's TOC when none is saved yet."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE books
+            SET contents_outline = COALESCE(contents_outline, %s),
+                updated_at = NOW()
+            WHERE id = %s
+              AND (contents_outline IS NULL OR contents_outline = 'null'::jsonb
+                   OR contents_outline = '[]'::jsonb)
+            """,
+            (Jsonb(outline), book_id),
+        )
+    conn.commit()
+
+
+def job_page_numbers(job: dict[str, Any]) -> list[int]:
+    """Exact pages for a job, or the inclusive pageStart..pageEnd range."""
+    numbers = job.get("page_numbers")
+    if isinstance(numbers, list) and numbers:
+        return sorted({int(n) for n in numbers})
+    return list(range(int(job["page_start"]), int(job["page_end"]) + 1))
+
+
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()

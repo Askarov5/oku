@@ -11,7 +11,14 @@ import {
 import type { NoticeState } from "@oku/ui";
 import Link from "next/link";
 import type { ReactElement } from "react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  NETWORK_MESSAGE,
+  SESSION_MESSAGE,
+  failureText,
+  isTimeout,
+  readJson,
+} from "@/lib/admin-request";
 import { AdminGate } from "@/components/admin-gate";
 import { BookCover } from "@/components/book-cover";
 import { BookForm, EMPTY_BOOK_FORM, bookFormInitial } from "@/components/book-form";
@@ -19,33 +26,99 @@ import type { BookFormDraft } from "@/components/book-form";
 import { ExtractionModelCard } from "@/components/extraction-model-card";
 import type { Category, LibraryBook } from "@/lib/catalog";
 import { shelfLine } from "@/lib/catalog";
+import type { LibraryCatalog, LibrarySession } from "@/lib/library-session";
 import { forgetBookDetail } from "@/lib/use-book-detail";
 
-const LibraryPage = (): ReactElement => {
-  const [books, setBooks] = useState<LibraryBook[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+type LoadError = "network" | "unauthorized" | "failed";
+
+interface LibraryShelfProps {
+  catalog: LibraryCatalog;
+  model: LibrarySession["model"];
+}
+
+const editButtonId = (bookId: string): string => `edit-${bookId}`;
+
+const loadErrorText = (error: LoadError): string => {
+  if (error === "network") return NETWORK_MESSAGE;
+  if (error === "unauthorized") return SESSION_MESSAGE;
+  return "The library could not be loaded. Refresh to try again.";
+};
+
+const LibraryLoadError = ({ error }: { error: LoadError }): ReactElement => (
+  <div className="mt-4">
+    <Notice tone="error">{loadErrorText(error)}</Notice>
+    {error === "unauthorized" ? (
+      <Button className="mt-3" onClick={() => window.location.reload()}>
+        Reload
+      </Button>
+    ) : null}
+  </div>
+);
+
+const LibraryShelf = ({ catalog, model }: LibraryShelfProps): ReactElement => {
+  const [books, setBooks] = useState<LibraryBook[]>(catalog.books);
+  const [categories, setCategories] = useState<Category[]>(catalog.categories);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [message, setMessage] = useState<NoticeState | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<LoadError | null>(null);
+  const loadSeq = useRef(0);
+  const mounted = useRef(true);
+  const focusAfter = useRef<string | null>(null);
 
-  const loadBooks = async (): Promise<void> => {
-    const response = await fetch("/api/admin/books");
-    if (!response.ok) {
-      return;
+  const loadBooks = useCallback(async (): Promise<boolean> => {
+    const seq = ++loadSeq.current;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const response = await fetch("/api/admin/books", {
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!mounted.current || seq !== loadSeq.current) return false;
+      if (!response.ok) {
+        setLoadError(response.status === 401 ? "unauthorized" : "failed");
+        return false;
+      }
+      const data = await readJson<LibraryCatalog>(response);
+      if (!mounted.current || seq !== loadSeq.current) return false;
+      if (
+        !data ||
+        !Array.isArray(data.books) ||
+        !Array.isArray(data.categories)
+      ) {
+        setLoadError("failed");
+        return false;
+      }
+      setBooks(data.books);
+      setCategories(data.categories);
+      return true;
+    } catch (caught) {
+      if (!mounted.current || seq !== loadSeq.current) return false;
+      setLoadError(isTimeout(caught) ? "failed" : "network");
+      return false;
+    } finally {
+      if (mounted.current && seq === loadSeq.current) setLoading(false);
     }
-    const data = (await response.json()) as {
-      books: LibraryBook[];
-      categories: Category[];
-    };
-    setBooks(data.books);
-    setCategories(data.categories);
-  };
+  }, []);
 
   useEffect(() => {
-    void loadBooks();
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
   }, []);
+
+  useLayoutEffect(() => {
+    const id = focusAfter.current;
+    if (!id) return;
+    const node = document.getElementById(id);
+    if (!node) return;
+    focusAfter.current = null;
+    node.focus({ focusVisible: true } as FocusOptions);
+  });
 
   const editing = books.find((book) => book.id === editingId) ?? null;
 
@@ -67,6 +140,7 @@ const LibraryPage = (): ReactElement => {
   };
 
   const cancelEdit = (): void => {
+    if (editingId) focusAfter.current = editButtonId(editingId);
     setMessage(null);
     setEditingId(null);
   };
@@ -99,24 +173,47 @@ const LibraryPage = (): ReactElement => {
     }
     if (draft.pageStart) form.set("pageStart", draft.pageStart);
     if (draft.pageEnd) form.set("pageEnd", draft.pageEnd);
+    form.set("roleCover", draft.pageRoles.cover);
+    form.set("roleTableOfContents", draft.pageRoles.tableOfContents);
+    form.set("roleGlossary", draft.pageRoles.glossary);
+    form.set("roleAppendices", draft.pageRoles.appendices);
+    form.set("roleAnswers", draft.pageRoles.answers);
     // The first page as an image, saved next to the original PDF.
     if (draft.cover) form.set("cover", draft.cover, "cover");
 
-    const response = await fetch("/api/admin/books", {
-      method: "POST",
-      body: form,
-    });
-    const data = (await response.json().catch(() => ({}))) as {
+    let response: Response;
+    try {
+      response = await fetch("/api/admin/books", {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(120_000),
+      });
+    } catch (caught) {
+      setBusy(false);
+      setMessage({
+        text: isTimeout(caught)
+          ? "The upload took too long. Try again."
+          : NETWORK_MESSAGE,
+        tone: "error",
+      });
+      return;
+    }
+    const data = (await readJson<{
       bookId?: string;
       error?: string;
       totalPages?: number;
       pageStart?: number;
       pageEnd?: number;
-    };
+      bodyConversionQueued?: boolean;
+      specialPageCount?: number;
+    }>(response)) ?? {};
 
     setBusy(false);
     if (!response.ok) {
-      setMessage({ text: data.error ?? "Upload failed", tone: "error" });
+      setMessage({
+        text: data.error ?? failureText(response.status, "Upload failed"),
+        tone: "error",
+      });
       return;
     }
 
@@ -124,11 +221,16 @@ const LibraryPage = (): ReactElement => {
       data.totalPages === undefined
         ? null
         : `${data.totalPages} ${data.totalPages === 1 ? "page" : "pages"}`;
+    const specials =
+      data.bodyConversionQueued === false && data.specialPageCount
+        ? ` Extracting ${data.specialPageCount} special ${data.specialPageCount === 1 ? "page" : "pages"} first.`
+        : data.pageStart !== undefined && data.pageEnd !== undefined
+          ? ` Queued ${data.pageStart}–${data.pageEnd} for digitizing.`
+          : "";
     setMessage({
-      text:
-        saved && data.pageStart !== undefined && data.pageEnd !== undefined
-          ? `Saved ${saved}. Queued ${data.pageStart}–${data.pageEnd} for digitizing. Opening book…`
-          : "Book uploaded. Opening…",
+      text: saved
+        ? `Saved ${saved}.${specials} Opening book…`
+        : "Book uploaded. Opening…",
       tone: "info",
     });
     await loadBooks();
@@ -140,32 +242,49 @@ const LibraryPage = (): ReactElement => {
   const saveBook = async (bookId: string, draft: BookFormDraft): Promise<void> => {
     setBusy(true);
     setMessage(null);
-    const response = await fetch(`/api/admin/books/${bookId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: draft.title,
-        authors: draft.authors,
-        language: draft.language,
-        categoryId: draft.categoryId,
-        subcategoryId: draft.subcategoryId,
-        newSubcategory: draft.newSubcategory,
-        schoolTextbook: draft.schoolTextbook,
-        grade: draft.grade,
-        publishedYear: draft.publishedYear,
-      }),
-    });
-    const data = (await response.json()) as {
+    let response: Response;
+    try {
+      response = await fetch(`/api/admin/books/${bookId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: draft.title,
+          authors: draft.authors,
+          language: draft.language,
+          categoryId: draft.categoryId,
+          subcategoryId: draft.subcategoryId,
+          newSubcategory: draft.newSubcategory,
+          schoolTextbook: draft.schoolTextbook,
+          grade: draft.grade,
+          publishedYear: draft.publishedYear,
+        }),
+        signal: AbortSignal.timeout(20_000),
+      });
+    } catch (caught) {
+      setBusy(false);
+      setMessage({
+        text: isTimeout(caught)
+          ? "Saving took too long. Try again."
+          : NETWORK_MESSAGE,
+        tone: "error",
+      });
+      return;
+    }
+    const data = (await readJson<{
       book?: LibraryBook;
       error?: string;
-    };
+    }>(response)) ?? {};
 
     setBusy(false);
     if (!response.ok) {
-      setMessage({ text: data.error ?? "Could not save the book", tone: "error" });
+      setMessage({
+        text: data.error ?? failureText(response.status, "Could not save the book"),
+        tone: "error",
+      });
       return;
     }
 
+    focusAfter.current = editButtonId(bookId);
     setEditingId(null);
     setSaved(data.book?.title ?? draft.title.trim());
     await loadBooks();
@@ -190,26 +309,42 @@ const LibraryPage = (): ReactElement => {
     setDeletingId(book.id);
     setMessage(null);
     setSaved(null);
-    const response = await fetch(`/api/admin/books/${book.id}`, {
-      method: "DELETE",
-    });
-    const data = (await response.json().catch(() => ({}))) as {
-      error?: string;
-      title?: string;
-    };
-    setDeletingId(null);
-    if (!response.ok) {
+    let response: Response;
+    try {
+      response = await fetch(`/api/admin/books/${book.id}`, {
+        method: "DELETE",
+        signal: AbortSignal.timeout(20_000),
+      });
+    } catch (caught) {
+      setDeletingId(null);
       setMessage({
-        text: data.error ?? "Could not delete the book",
+        text: isTimeout(caught)
+          ? "Deleting took too long. Try again."
+          : NETWORK_MESSAGE,
         tone: "error",
       });
       return;
     }
+    const data = (await readJson<{
+      error?: string;
+      title?: string;
+    }>(response)) ?? {};
+    setDeletingId(null);
+    if (!response.ok) {
+      setMessage({
+        text: data.error ?? failureText(response.status, "Could not delete the book"),
+        tone: "error",
+      });
+      return;
+    }
+    const index = books.findIndex((item) => item.id === book.id);
+    const neighbor = books[index + 1] ?? books[index - 1] ?? null;
+    focusAfter.current = neighbor ? editButtonId(neighbor.id) : "library-heading";
+    setBooks((current) => current.filter((item) => item.id !== book.id));
     if (editingId === book.id) {
       setEditingId(null);
     }
     forgetBookDetail(book.id);
-    setSaved(null);
     setMessage({
       text: `Deleted ${data.title ?? book.title}`,
       tone: "info",
@@ -218,14 +353,14 @@ const LibraryPage = (): ReactElement => {
   };
 
   return (
-    <AdminGate>
+    <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-11">
       {/* The book list leads. Upload and edit share the side column, and drop below the list under lg. */}
-      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-11">
-        <section aria-labelledby="library-heading">
+        <section aria-labelledby="library-heading" aria-busy={loading}>
           <div className="flex items-end justify-between gap-4">
             <div>
               <h2
                 id="library-heading"
+                tabIndex={-1}
                 className="text-2xl font-bold tracking-tight"
               >
                 Library
@@ -239,6 +374,8 @@ const LibraryPage = (): ReactElement => {
               size="icon"
               aria-label="Refresh"
               title="Refresh"
+              aria-busy={loading}
+              disabled={loading}
               onClick={() => void loadBooks()}
             >
               <RefreshIcon />
@@ -251,12 +388,23 @@ const LibraryPage = (): ReactElement => {
             </Notice>
           ) : null}
 
-          {books.length === 0 ? (
+          {loading && books.length === 0 ? (
+            <p
+              role="status"
+              className="mt-6 text-[var(--text-secondary)]"
+            >
+              Loading the library…
+            </p>
+          ) : loadError && books.length === 0 ? (
+            <LibraryLoadError error={loadError} />
+          ) : books.length === 0 ? (
             <p className="mt-6 border-t border-[var(--border-hairline)] pt-6 text-[var(--text-secondary)]">
               No books yet. Upload a PDF to start ingestion.
             </p>
           ) : (
-            <ul className="mt-6 divide-y divide-[var(--border-hairline)] overflow-hidden rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)]">
+            <>
+              {loadError ? <LibraryLoadError error={loadError} /> : null}
+              <ul className="mt-6 divide-y divide-[var(--border-hairline)] overflow-hidden rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)]">
               {books.map((book) => {
                 const selected = editing?.id === book.id;
                 return (
@@ -273,16 +421,20 @@ const LibraryPage = (): ReactElement => {
                     <div className="min-w-0 flex-1 sm:flex sm:items-center sm:justify-between sm:gap-4">
                       <div className="min-w-0">
                         <Link
-                          className="text-lg font-semibold after:absolute after:inset-0"
+                          lang={book.language}
+                          className="break-words text-lg font-semibold after:absolute after:inset-0"
                           href={`/admin/library/${book.id}`}
                         >
                           {book.title}
                         </Link>
-                        <p className="mt-1 font-mono text-xs text-[var(--text-secondary)]">
+                        <p className="mt-1 break-words font-mono text-xs text-[var(--text-secondary)]">
                           {shelfLine(book)}
                         </p>
                         {book.authors.length > 0 ? (
-                          <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                          <p
+                            lang={book.language}
+                            className="mt-1 break-words text-sm text-[var(--text-secondary)]"
+                          >
                             {book.authors.join(", ")}
                           </p>
                         ) : null}
@@ -293,6 +445,7 @@ const LibraryPage = (): ReactElement => {
                           variant={selected ? "secondary" : "ghost"}
                           size="icon"
                           className="relative z-10"
+                          id={editButtonId(book.id)}
                           aria-label={`Edit ${book.title}`}
                           title="Edit"
                           aria-pressed={selected}
@@ -324,7 +477,8 @@ const LibraryPage = (): ReactElement => {
                   </li>
                 );
               })}
-            </ul>
+              </ul>
+            </>
           )}
         </section>
 
@@ -340,11 +494,18 @@ const LibraryPage = (): ReactElement => {
             onSubmit={onSubmit}
             onCancel={editing ? cancelEdit : undefined}
           />
-          <ExtractionModelCard />
+          <ExtractionModelCard initial={model} />
         </div>
-      </div>
-    </AdminGate>
+    </div>
   );
 };
+
+const LibraryPage = (): ReactElement => (
+  <AdminGate withCatalog>
+    {(session) => (
+      <LibraryShelf catalog={session.catalog} model={session.model} />
+    )}
+  </AdminGate>
+);
 
 export default LibraryPage;

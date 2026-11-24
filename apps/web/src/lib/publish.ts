@@ -1,4 +1,9 @@
-import { PageExtractedJsonSchema, buildUnits } from "@oku/shared-types";
+import {
+  PageExtractedJsonSchema,
+  buildUnits,
+  readStoredContents,
+  type PageRole,
+} from "@oku/shared-types";
 import { bookPages, books, units } from "@oku/db";
 import { asc, eq } from "drizzle-orm";
 import { getDb } from "./db";
@@ -53,11 +58,20 @@ export const publishBook = async (bookId: string): Promise<{ unitCount: number }
   }
 
   const pipeline = publishPipeline(pages);
+  const pageRoles = new Map<number, PageRole>(
+    pipeline.map((page) => [page.pageNumber, page.pageRole as PageRole]),
+  );
+  const contentsOutline = readStoredContents(book.contentsOutline);
 
   // Content before the first unit header is published under the book title.
   const drafts = buildUnits(
     pipeline.map((page) => PageExtractedJsonSchema.parse(page.extractedJson)),
     book.title,
+    {
+      language: book.language,
+      pageRoles,
+      contentsOutline,
+    },
   );
 
   await db.delete(units).where(eq(units.bookId, bookId));

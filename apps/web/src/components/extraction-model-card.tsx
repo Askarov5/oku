@@ -4,14 +4,19 @@ import { Button, Card, Notice, fieldClass } from "@oku/ui";
 import type { NoticeState } from "@oku/ui";
 import type { FormEvent, ReactElement } from "react";
 import { useEffect, useState } from "react";
-import { modelLabel, providerLabel, PROVIDERS } from "@/lib/extraction-model";
+import {
+  EXTRACTION_MODEL_ENDPOINT,
+  modelLabel,
+  providerLabel,
+  PROVIDERS,
+} from "@/lib/extraction-model";
 import type {
   ExtractionModelResponse,
   ModelOption,
   ProviderId,
 } from "@/lib/extraction-model";
 
-const ENDPOINT = "/api/admin/settings/extraction-model";
+const ENDPOINT = EXTRACTION_MODEL_ENDPOINT;
 
 const groupsFor = (
   options: ModelOption[],
@@ -23,8 +28,15 @@ const groupsFor = (
 
 type LoadState = "loading" | "ready" | "failed";
 
+interface ExtractionModelCardProps {
+  /** The request started with the catalog, so this card does not fetch again. */
+  initial: Promise<ExtractionModelResponse | null>;
+}
+
 /** Lets an admin choose the model that reads pages into text. */
-export const ExtractionModelCard = (): ReactElement => {
+export const ExtractionModelCard = ({
+  initial,
+}: ExtractionModelCardProps): ReactElement => {
   const [state, setState] = useState<LoadState>("loading");
   const [options, setOptions] = useState<ModelOption[]>([]);
   const [listed, setListed] = useState(true);
@@ -35,25 +47,23 @@ export const ExtractionModelCard = (): ReactElement => {
   const [message, setMessage] = useState<NoticeState | null>(null);
 
   useEffect(() => {
-    const load = async (): Promise<void> => {
-      try {
-        const response = await fetch(ENDPOINT);
-        if (!response.ok) {
-          setState("failed");
-          return;
-        }
-        const data = (await response.json()) as ExtractionModelResponse;
-        setOptions(data.options);
-        setListed(data.listed);
-        setSaved(data.model);
-        setChosen(data.model ?? "");
-        setState("ready");
-      } catch {
+    let cancelled = false;
+    void initial.then((data) => {
+      if (cancelled) return;
+      if (!data) {
         setState("failed");
+        return;
       }
+      setOptions(data.options);
+      setListed(data.listed);
+      setSaved(data.model);
+      setChosen(data.model ?? "");
+      setState("ready");
+    });
+    return () => {
+      cancelled = true;
     };
-    void load();
-  }, []);
+  }, [initial]);
 
   const onSave = async (event: FormEvent): Promise<void> => {
     event.preventDefault();

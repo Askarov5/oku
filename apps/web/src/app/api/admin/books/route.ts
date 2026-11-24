@@ -1,4 +1,8 @@
 import { bookPages, books, ingestionJobs } from "@oku/db";
+import {
+  parsePageRoleAssignments,
+  resolvePageRoles,
+} from "@oku/shared-types";
 import { NextResponse } from "next/server";
 import { isAuthorized, unauthorized } from "@/lib/auth";
 import { digitizePageSeeds } from "@/lib/book-page-range";
@@ -58,7 +62,17 @@ export const POST = async (request: Request): Promise<NextResponse> => {
     const title = String(form.get("title") ?? "").trim();
     const pageStartRaw = String(form.get("pageStart") ?? "").trim();
     const pageEndRaw = String(form.get("pageEnd") ?? "").trim();
-    const categories = await listCategories();
+    if (!(file instanceof File)) {
+      return NextResponse.json({ error: "file required" }, { status: 400 });
+    }
+    if (!title) {
+      return NextResponse.json({ error: "title required" }, { status: 400 });
+    }
+
+    const [categories, bytes] = await Promise.all([
+      listCategories(),
+      file.arrayBuffer(),
+    ]);
     const parsed = parseBookUpload(
       {
         authors: form.getAll("authors").map((value) => String(value)),
@@ -73,17 +87,10 @@ export const POST = async (request: Request): Promise<NextResponse> => {
       categories,
     );
 
-    if (!(file instanceof File)) {
-      return NextResponse.json({ error: "file required" }, { status: 400 });
-    }
-    if (!title) {
-      return NextResponse.json({ error: "title required" }, { status: 400 });
-    }
     if (!parsed.ok) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
 
-    const bytes = await file.arrayBuffer();
     let totalPages: number;
     try {
       totalPages = await countPdfPages(bytes);
@@ -93,11 +100,33 @@ export const POST = async (request: Request): Promise<NextResponse> => {
         { status: 400 },
       );
     }
-    const range = digitizePageSeeds(totalPages, pageStartRaw, pageEndRaw);
+
+    const roleFields = parsePageRoleAssignments({
+      cover: String(form.get("roleCover") ?? ""),
+      tableOfContents: String(form.get("roleTableOfContents") ?? ""),
+      glossary: String(form.get("roleGlossary") ?? ""),
+      appendices: String(form.get("roleAppendices") ?? ""),
+      answers: String(form.get("roleAnswers") ?? ""),
+    });
+    if (!roleFields.ok) {
+      return NextResponse.json({ error: roleFields.error }, { status: 400 });
+    }
+    const roles = resolvePageRoles(roleFields.assignments, totalPages);
+    if (!roles.ok) {
+      return NextResponse.json({ error: roles.error }, { status: 400 });
+    }
+
+    const range = digitizePageSeeds(
+      totalPages,
+      pageStartRaw,
+      pageEndRaw,
+      roles.byPage,
+    );
     if (!range.ok) {
       return NextResponse.json({ error: range.error }, { status: 400 });
     }
-    const { pageStart, pageEnd, pages } = range;
+    const { pageStart, pageEnd, pages, queuedPages, bodyConversionQueued } =
+      range;
 
     const db = getDb();
     const bookId = crypto.randomUUID();
@@ -116,12 +145,15 @@ export const POST = async (request: Request): Promise<NextResponse> => {
       );
     }
     // The original PDF is stored unchanged; the worker reads it and the admin can open it.
-    const sourcePdfUrl = await uploadObject({
-      key: `${bookStoragePrefix(bookId)}/source.pdf`,
-      body: Buffer.from(bytes),
-      contentType: "application/pdf",
-    });
-    const coverImageUrl = await saveCover(bookId, form.get("cover"));
+    // The cover is a separate object and does not depend on the PDF upload.
+    const [sourcePdfUrl, coverImageUrl] = await Promise.all([
+      uploadObject({
+        key: `${bookStoragePrefix(bookId)}/source.pdf`,
+        body: Buffer.from(bytes),
+        contentType: "application/pdf",
+      }),
+      saveCover(bookId, form.get("cover")),
+    ]);
 
     await db.insert(books).values({
       id: bookId,
@@ -138,26 +170,33 @@ export const POST = async (request: Request): Promise<NextResponse> => {
       coverImageUrl,
       isCanonical: true,
       status: "draft",
+      digitizePageStart: pageStart,
+      digitizePageEnd: pageEnd,
+      bodyConversionQueued,
     });
 
-    // Every PDF page is kept on the book; only the digitize range is queued for AI.
+    // Every PDF page is kept on the book; only queued pages start as pending.
     await db.insert(bookPages).values(
       pages.map((page) => ({
         bookId,
         pageNumber: page.pageNumber,
         status: page.status,
         stage: page.stage,
+        pageRole: page.pageRole,
       })),
     );
 
+    const jobPageStart = queuedPages[0] ?? pageStart;
+    const jobPageEnd = queuedPages[queuedPages.length - 1] ?? pageEnd;
     const [job] = await db
       .insert(ingestionJobs)
       .values({
         bookId,
         status: "queued",
-        pageStart,
-        pageEnd,
-        totalPages: pageEnd - pageStart + 1,
+        pageStart: jobPageStart,
+        pageEnd: jobPageEnd,
+        pageNumbers: bodyConversionQueued ? null : queuedPages,
+        totalPages: queuedPages.length,
         completedPages: 0,
         failedPages: 0,
       })
@@ -169,6 +208,9 @@ export const POST = async (request: Request): Promise<NextResponse> => {
       totalPages,
       pageStart,
       pageEnd,
+      queuedPages,
+      bodyConversionQueued,
+      specialPageCount: bodyConversionQueued ? 0 : queuedPages.length,
     });
   } catch (error) {
     console.error("POST /api/admin/books failed", error);

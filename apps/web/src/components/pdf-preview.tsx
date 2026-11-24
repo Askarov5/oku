@@ -23,6 +23,8 @@ interface PdfPreviewProps {
    * (invalid or unknown range). Re-evaluated for the page on screen.
    */
   pageInRange?: (pageNumber: number) => boolean | null;
+  /** Optional role label for the page on screen (e.g. Cover, Table of contents). */
+  pageRoleLabel?: (pageNumber: number) => string | null;
 }
 
 type PreviewStatus = "reading" | "ready" | "failed";
@@ -39,6 +41,7 @@ export const PdfPreview = ({
   file,
   onRead,
   pageInRange,
+  pageRoleLabel,
 }: PdfPreviewProps): ReactElement => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const onReadRef = useRef(onRead);
@@ -121,6 +124,7 @@ export const PdfPreview = ({
 
   const pageCount = pdf?.pageCount ?? 0;
   const inRange = pageInRange?.(page) ?? null;
+  const roleLabel = pageRoleLabel?.(page) ?? null;
 
   return (
     <section aria-label="PDF preview" className="text-sm">
@@ -190,6 +194,11 @@ export const PdfPreview = ({
               <ChevronRightIcon />
             </Button>
           </div>
+          {roleLabel ? (
+            <p className="mt-2 text-xs text-[var(--text-secondary)]">
+              Role: {roleLabel}
+            </p>
+          ) : null}
           {inRange === null ? null : (
             <p className="mt-2 text-xs text-[var(--text-secondary)]">
               {inRange ? "Will be digitized" : "Saved only"}

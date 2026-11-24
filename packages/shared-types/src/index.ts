@@ -1,4 +1,6 @@
 export * from "./block-ast.js";
+export * from "./contents.js";
+export * from "./page-roles.js";
 export * from "./table-lift.js";
 export * from "./units.js";
 
@@ -11,6 +13,13 @@ export type BookPageStatus =
   | "failed"
   /** Kept on the book from the original PDF; not sent to AI yet. */
   | "stored";
+export type BookPageRole =
+  | "body"
+  | "table_of_contents"
+  | "cover"
+  | "glossary"
+  | "appendix"
+  | "answers";
 export type IngestionJobStatus = "queued" | "running" | "completed" | "failed";
 
 export interface CountryConfig {

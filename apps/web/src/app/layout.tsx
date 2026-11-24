@@ -24,6 +24,9 @@ interface RootLayoutProps {
   children: ReactNode;
 }
 
+/* Keep in sync with THEME_STORAGE_KEY in packages/ui/src/theme-shell.tsx. */
+const themeBootScript = `(function(){try{var stored=localStorage.getItem("oku-theme");var theme=stored==="dark"||stored==="light"?stored:matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.setAttribute("data-theme",theme);}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: RootLayoutProps): ReactElement {
@@ -32,6 +35,7 @@ export default function RootLayout({
       <body
         className={`${golos.variable} ${jetbrains.variable} font-sans antialiased`}
       >
+        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
         {children}
       </body>
     </html>

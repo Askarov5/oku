@@ -97,7 +97,30 @@ export const UnitHeaderBlockSchema = z.object({
   title: z.string(),
   /** Absent on pages saved before levels existed; readers infer it from the title. */
   level: HeadingLevelSchema.optional(),
+  /**
+   * True when a reviewer set the level by hand; contents refresh leaves it alone.
+   */
+  levelPinned: z.boolean().optional(),
 });
+
+/** Metadata extracted from a cover page. */
+export const CoverMetaSchema = z.object({
+  title: z.string().optional(),
+  authors: z.array(z.string()).optional(),
+  publishedYear: z.number().int().optional(),
+  publisher: z.string().optional(),
+});
+
+export type CoverMeta = z.infer<typeof CoverMetaSchema>;
+
+/** One line of a structured table of contents from a TOC page extraction. */
+export const TocEntrySchema = z.object({
+  title: z.string().trim().min(1),
+  level: HeadingLevelSchema,
+  printedPage: z.string().trim().min(1),
+});
+
+export type TocEntry = z.infer<typeof TocEntrySchema>;
 
 /**
  * Where a textbook page starts inside a unit body. `label` is the number
@@ -149,6 +172,10 @@ export const PageExtractedJsonSchema = z.object({
   warnings: z.array(z.string()),
   model: z.string(),
   extractedAt: z.string(),
+  /** Structured TOC lines when this page was extracted as table_of_contents. */
+  tocEntries: z.array(TocEntrySchema).optional(),
+  /** Cover metadata when this page was extracted as cover. */
+  coverMeta: CoverMetaSchema.optional(),
 });
 
 export type PageExtractedJson = z.infer<typeof PageExtractedJsonSchema>;
@@ -161,6 +188,10 @@ export const UnitHeaderSchema = z.object({
   pageEnd: z.number().int().min(1),
   pageStartLabel: z.string().nullable(),
   pageEndLabel: z.string().nullable(),
+  /** Absent or "body" for lesson units; otherwise a front/back-matter kind. */
+  kind: z
+    .enum(["body", "cover", "glossary", "appendix", "answers"])
+    .optional(),
 });
 
 export type UnitHeader = z.infer<typeof UnitHeaderSchema>;

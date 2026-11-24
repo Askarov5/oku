@@ -106,6 +106,59 @@ def test_a_printed_table_of_contents_does_not_open_units() -> None:
     assert [block.type for block in page.blocks] == ["markdown"]
 
 
+def test_toc_role_keeps_structured_entries_and_demotes_headers() -> None:
+    page = parse_page_response(
+        _answer(
+            tocEntries=[
+                {"title": "I. Chapter", "level": 1, "printedPage": "4"},
+                {"title": "1. Lesson", "level": 2, "printedPage": "4"},
+            ],
+            blocks=[
+                {"type": "unit_header", "title": "I. Chapter", "level": 1},
+                {"type": "markdown", "markdown": "I. Chapter ........ 4"},
+            ],
+        ),
+        page_role="table_of_contents",
+    )
+    assert page.tocEntries is not None
+    assert [entry.title for entry in page.tocEntries] == ["I. Chapter", "1. Lesson"]
+    assert [block.type for block in page.blocks] == ["markdown", "markdown"]
+    assert page.blocks[0].markdown.startswith("# I. Chapter")
+
+
+def test_answers_role_does_not_split_numbered_headings() -> None:
+    page = parse_page_response(
+        _answer(
+            blocks=[
+                {
+                    "type": "markdown",
+                    "markdown": "### § 3. Answers\n\n| № | Answer |\n| --- | --- |\n| 1 | 14 |",
+                }
+            ]
+        ),
+        page_role="answers",
+    )
+    assert [block.type for block in page.blocks] == ["markdown"]
+
+
+def test_cover_meta_is_kept() -> None:
+    page = parse_page_response(
+        _answer(
+            coverMeta={
+                "title": "Саясий география",
+                "authors": ["А. Автор"],
+                "publishedYear": 2024,
+                "publisher": "Билим",
+            },
+            blocks=[{"type": "markdown", "markdown": "# Саясий география"}],
+        ),
+        page_role="cover",
+    )
+    assert page.coverMeta is not None
+    assert page.coverMeta.title == "Саясий география"
+    assert page.coverMeta.publishedYear == 2024
+
+
 def test_accepts_the_models_native_box() -> None:
     # [ymin, xmin, ymax, xmax] on a 0..1000 scale.
     page = parse_page_response(

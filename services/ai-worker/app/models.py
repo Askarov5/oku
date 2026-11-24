@@ -89,6 +89,19 @@ PageBlock = Annotated[
 ]
 
 
+class TocEntry(BaseModel):
+    title: str
+    level: int = Field(ge=1, le=6)
+    printedPage: str
+
+
+class CoverMeta(BaseModel):
+    title: str | None = None
+    authors: list[str] | None = None
+    publishedYear: int | None = None
+    publisher: str | None = None
+
+
 class PageExtractedJson(BaseModel):
     pageNumber: int = Field(ge=1)
     printedPage: str | None = None
@@ -97,6 +110,8 @@ class PageExtractedJson(BaseModel):
     warnings: list[str]
     model: str
     extractedAt: datetime | str
+    tocEntries: list[TocEntry] | None = None
+    coverMeta: CoverMeta | None = None
 
     _normalize_printed_page = field_validator("printedPage", mode="before")(
         _printed_page
@@ -125,6 +140,8 @@ class LlmPageResponse(BaseModel):
     continuesFromPrevious: bool = False
     blocks: list[LlmBlock]
     warnings: list[str] = Field(default_factory=list)
+    tocEntries: list[TocEntry] | None = None
+    coverMeta: CoverMeta | None = None
 
     _normalize_printed_page = field_validator("printedPage", mode="before")(
         _printed_page
