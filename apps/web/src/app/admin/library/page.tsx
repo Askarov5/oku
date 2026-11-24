@@ -1,16 +1,16 @@
 "use client";
 
+import type { BookStatus } from "@oku/shared-types";
 import {
   Button,
   Notice,
   PencilIcon,
   RefreshIcon,
-  StatusPill,
   TrashIcon,
 } from "@oku/ui";
 import type { NoticeState } from "@oku/ui";
 import Link from "next/link";
-import type { ReactElement } from "react";
+import type { CSSProperties, ReactElement } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   NETWORK_MESSAGE,
@@ -24,8 +24,14 @@ import { BookCover } from "@/components/book-cover";
 import { BookForm, EMPTY_BOOK_FORM, bookFormInitial } from "@/components/book-form";
 import type { BookFormDraft } from "@/components/book-form";
 import { ExtractionModelCard } from "@/components/extraction-model-card";
-import type { Category, LibraryBook } from "@/lib/catalog";
-import { shelfLine } from "@/lib/catalog";
+import { LibraryFilters } from "@/components/library-filters";
+import type { Category, LibraryBook, LibraryShelfQuery } from "@/lib/catalog";
+import {
+  EMPTY_SHELF_QUERY,
+  filterLibrary,
+  gradesOnShelf,
+  languageName,
+} from "@/lib/catalog";
 import type { LibraryCatalog, LibrarySession } from "@/lib/library-session";
 import { forgetBookDetail } from "@/lib/use-book-detail";
 
@@ -37,6 +43,175 @@ interface LibraryShelfProps {
 }
 
 const editButtonId = (bookId: string): string => `edit-${bookId}`;
+
+interface BookMark {
+  letter: "P" | "R" | "D";
+  name: string;
+  style: CSSProperties;
+}
+
+/* P is the published plate, R is in review, D is still a draft. */
+const BOOK_MARK: Record<BookStatus, BookMark> = {
+  published: {
+    letter: "P",
+    name: "Published",
+    style: {
+      color: "var(--status-reviewed-on)",
+      borderColor: "var(--status-reviewed-fill)",
+      backgroundColor: "var(--status-reviewed-fill)",
+    },
+  },
+  review: {
+    letter: "R",
+    name: "In review",
+    style: {
+      color: "var(--status-extracted)",
+      borderColor: "var(--status-extracted)",
+      backgroundColor: "transparent",
+    },
+  },
+  draft: {
+    letter: "D",
+    name: "Draft",
+    style: {
+      color: "var(--status-pending)",
+      borderColor: "var(--status-pending-line)",
+      backgroundColor: "transparent",
+    },
+  },
+};
+
+interface BookStatusMarkProps {
+  status: BookStatus;
+}
+
+const BookStatusMark = ({ status }: BookStatusMarkProps): ReactElement => {
+  const mark = BOOK_MARK[status];
+  return (
+    <span
+      title={mark.name}
+      style={mark.style}
+      className="inline-flex size-8 shrink-0 items-center justify-center rounded-[var(--rounded-xs)] border font-[family-name:var(--font-mono)] text-sm font-medium leading-none"
+    >
+      <span aria-hidden="true">{mark.letter}</span>
+      <span className="sr-only">{mark.name}</span>
+    </span>
+  );
+};
+
+const ShelfFacts = ({ book }: { book: LibraryBook }): ReactElement => (
+  <p className="mt-1.5 text-xs leading-5 text-[var(--text-secondary)]">
+    {languageName(book.language)}
+    <span aria-hidden="true"> · </span>
+    {book.categoryName}
+    <span aria-hidden="true"> · </span>
+    {book.subcategoryName}
+    {(book.isSchoolTextbook && book.grade !== null) || book.publishedYear !== null ? (
+      <span className="whitespace-nowrap">
+        {book.isSchoolTextbook && book.grade !== null ? (
+          <>
+            <span aria-hidden="true"> · </span>
+            <span className="font-[family-name:var(--font-mono)] tabular-nums">
+              {`grade\u00A0${book.grade}`}
+            </span>
+          </>
+        ) : null}
+        {book.publishedYear !== null ? (
+          <>
+            <span aria-hidden="true"> · </span>
+            <span className="font-[family-name:var(--font-mono)] tabular-nums">
+              {book.publishedYear}
+            </span>
+          </>
+        ) : null}
+      </span>
+    ) : null}
+  </p>
+);
+
+interface LibraryBookRowProps {
+  book: LibraryBook;
+  selected: boolean;
+  /** Upload, save, or any delete is in flight, so this row's actions wait. */
+  actionsLocked: boolean;
+  deleting: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+const LibraryBookRow = ({
+  book,
+  selected,
+  actionsLocked,
+  deleting,
+  onEdit,
+  onDelete,
+}: LibraryBookRowProps): ReactElement => (
+  <li
+    aria-busy={deleting || undefined}
+    className={`relative grid grid-cols-[3rem_minmax(0,1fr)] items-start gap-x-4 gap-y-2 px-4 py-4 transition-colors sm:grid-cols-[3rem_minmax(0,1fr)_auto] sm:items-center sm:gap-x-5 sm:px-5 ${
+      selected
+        ? "bg-[var(--bg-hover)] shadow-[inset_1px_0_0_var(--accent-primary)]"
+        : "hover:bg-[var(--bg-hover)] active:bg-[var(--bg-hover)]"
+    } ${deleting ? "opacity-60" : ""}`}
+  >
+    <BookCover
+      url={book.coverImageUrl}
+      className="col-start-1 row-start-1 row-span-2 h-[4.5rem] w-12 self-start sm:row-span-1 sm:self-center"
+    />
+    <div className="col-start-2 row-start-1 min-w-0">
+      <div className="absolute right-4 top-4 z-10 sm:hidden">
+        <BookStatusMark status={book.status} />
+      </div>
+      <div className="pr-10 sm:pr-0">
+        <Link
+          lang={book.language}
+          className="block break-words text-lg font-semibold leading-snug tracking-[-0.01em] after:absolute after:inset-0 hover:text-[var(--accent-ink)]"
+          href={`/admin/library/${book.id}`}
+        >
+          {book.title}
+        </Link>
+        {book.authors.length > 0 ? (
+          <p
+            lang={book.language}
+            className="mt-0.5 break-words text-sm leading-5 text-[var(--text-secondary)]"
+          >
+            {book.authors.join(", ")}
+          </p>
+        ) : null}
+        <ShelfFacts book={book} />
+      </div>
+    </div>
+    <div className="relative z-10 col-start-2 row-start-2 flex items-center justify-end gap-2 sm:col-start-3 sm:row-start-1 sm:self-center">
+      <div className="hidden sm:block">
+        <BookStatusMark status={book.status} />
+      </div>
+      <Button
+        variant={selected ? "secondary" : "ghost"}
+        size="icon"
+        id={editButtonId(book.id)}
+        aria-label={`Edit ${book.title}`}
+        title="Edit"
+        aria-pressed={selected}
+        aria-controls="book-form"
+        disabled={actionsLocked}
+        onClick={onEdit}
+      >
+        <PencilIcon />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label={deleting ? `Deleting ${book.title}` : `Delete ${book.title}`}
+        title={deleting ? "Deleting…" : "Delete"}
+        disabled={actionsLocked}
+        onClick={onDelete}
+      >
+        <TrashIcon />
+      </Button>
+    </div>
+  </li>
+);
 
 const loadErrorText = (error: LoadError): string => {
   if (error === "network") return NETWORK_MESSAGE;
@@ -65,6 +240,7 @@ const LibraryShelf = ({ catalog, model }: LibraryShelfProps): ReactElement => {
   const [saved, setSaved] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<LoadError | null>(null);
+  const [query, setQuery] = useState<LibraryShelfQuery>(EMPTY_SHELF_QUERY);
   const loadSeq = useRef(0);
   const mounted = useRef(true);
   const focusAfter = useRef<string | null>(null);
@@ -121,6 +297,8 @@ const LibraryShelf = ({ catalog, model }: LibraryShelfProps): ReactElement => {
   });
 
   const editing = books.find((book) => book.id === editingId) ?? null;
+  const shown = filterLibrary(books, query);
+  const grades = gradesOnShelf(books);
 
   useEffect(() => {
     if (!editingId) {
@@ -337,8 +515,8 @@ const LibraryShelf = ({ catalog, model }: LibraryShelfProps): ReactElement => {
       });
       return;
     }
-    const index = books.findIndex((item) => item.id === book.id);
-    const neighbor = books[index + 1] ?? books[index - 1] ?? null;
+    const index = shown.findIndex((item) => item.id === book.id);
+    const neighbor = shown[index + 1] ?? shown[index - 1] ?? null;
     focusAfter.current = neighbor ? editButtonId(neighbor.id) : "library-heading";
     setBooks((current) => current.filter((item) => item.id !== book.id));
     if (editingId === book.id) {
@@ -404,80 +582,37 @@ const LibraryShelf = ({ catalog, model }: LibraryShelfProps): ReactElement => {
           ) : (
             <>
               {loadError ? <LibraryLoadError error={loadError} /> : null}
-              <ul className="mt-6 divide-y divide-[var(--border-hairline)] overflow-hidden rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)]">
-              {books.map((book) => {
-                const selected = editing?.id === book.id;
-                return (
-                  <li
-                    key={book.id}
-                    className={`relative flex items-start gap-4 px-4 py-4 transition-colors sm:items-center sm:px-6 ${
-                      selected
-                        ? "bg-[var(--bg-hover)]"
-                        : "hover:bg-[var(--bg-hover)] active:bg-[var(--bg-hover)]"
-                    }`}
-                  >
-                    <BookCover url={book.coverImageUrl} className="h-16 w-12" />
-                    {/* On phones the status sits under the title, so the title keeps the row's width. */}
-                    <div className="min-w-0 flex-1 sm:flex sm:items-center sm:justify-between sm:gap-4">
-                      <div className="min-w-0">
-                        <Link
-                          lang={book.language}
-                          className="break-words text-lg font-semibold after:absolute after:inset-0"
-                          href={`/admin/library/${book.id}`}
-                        >
-                          {book.title}
-                        </Link>
-                        <p className="mt-1 break-words font-mono text-xs text-[var(--text-secondary)]">
-                          {shelfLine(book)}
-                        </p>
-                        {book.authors.length > 0 ? (
-                          <p
-                            lang={book.language}
-                            className="mt-1 break-words text-sm text-[var(--text-secondary)]"
-                          >
-                            {book.authors.join(", ")}
-                          </p>
-                        ) : null}
-                      </div>
-                      <div className="mt-2 flex shrink-0 flex-wrap items-center gap-2 sm:mt-0">
-                        <StatusPill status={book.status} />
-                        <Button
-                          variant={selected ? "secondary" : "ghost"}
-                          size="icon"
-                          className="relative z-10"
-                          id={editButtonId(book.id)}
-                          aria-label={`Edit ${book.title}`}
-                          title="Edit"
-                          aria-pressed={selected}
-                          aria-controls="book-form"
-                          disabled={busy || deletingId !== null}
-                          onClick={() => openEdit(book.id)}
-                        >
-                          <PencilIcon />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="relative z-10"
-                          aria-label={
-                            deletingId === book.id
-                              ? `Deleting ${book.title}`
-                              : `Delete ${book.title}`
-                          }
-                          title={
-                            deletingId === book.id ? "Deleting…" : "Delete"
-                          }
-                          disabled={busy || deletingId !== null}
-                          onClick={() => void deleteBook(book)}
-                        >
-                          <TrashIcon />
-                        </Button>
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-              </ul>
+              <LibraryFilters
+                query={query}
+                categories={categories}
+                grades={grades}
+                shown={shown.length}
+                total={books.length}
+                onChange={setQuery}
+                onClear={() => setQuery(EMPTY_SHELF_QUERY)}
+              />
+              {shown.length === 0 ? (
+                <p
+                  role="status"
+                  className="mt-6 border-t border-[var(--border-hairline)] pt-6 text-[var(--text-secondary)]"
+                >
+                  No books match. Clear the filters to see every book.
+                </p>
+              ) : (
+                <ul className="mt-4 divide-y divide-[var(--border-hairline)] overflow-hidden rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)]">
+                  {shown.map((book) => (
+                    <LibraryBookRow
+                      key={book.id}
+                      book={book}
+                      selected={editing?.id === book.id}
+                      actionsLocked={busy || deletingId !== null}
+                      deleting={deletingId === book.id}
+                      onEdit={() => openEdit(book.id)}
+                      onDelete={() => void deleteBook(book)}
+                    />
+                  ))}
+                </ul>
+              )}
             </>
           )}
         </section>

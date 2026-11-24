@@ -1,4 +1,5 @@
 import type { Book } from "@oku/db";
+import type { BookStatus } from "@oku/shared-types";
 
 export interface Subcategory {
   id: string;
@@ -47,3 +48,106 @@ export const shelfLine = (book: {
   }
   return parts.join(" · ");
 };
+
+export type ShelfLanguage = "all" | "ky" | "ru";
+
+export type ShelfStatus = "all" | BookStatus;
+
+/** What the shelf is narrowed to. Empty text and "all" mean the whole list. */
+export interface LibraryShelfQuery {
+  text: string;
+  language: ShelfLanguage;
+  status: ShelfStatus;
+  categoryId: string;
+  subcategoryId: string;
+  grade: number | null;
+}
+
+/** The fields a shelf search can see. */
+export interface ShelfMatch {
+  title: string;
+  authors: string[];
+  language: string;
+  categoryId: string;
+  categoryName: string;
+  subcategoryId: string;
+  subcategoryName: string;
+  status: BookStatus;
+  isSchoolTextbook: boolean;
+  grade: number | null;
+  publishedYear: number | null;
+}
+
+export const EMPTY_SHELF_QUERY: LibraryShelfQuery = {
+  text: "",
+  language: "all",
+  status: "all",
+  categoryId: "",
+  subcategoryId: "",
+  grade: null,
+};
+
+export const shelfQueryActive = (query: LibraryShelfQuery): boolean =>
+  query.text.trim() !== "" ||
+  query.language !== "all" ||
+  query.status !== "all" ||
+  query.categoryId !== "" ||
+  query.subcategoryId !== "" ||
+  query.grade !== null;
+
+/** Grades that appear on school textbooks, low to high. */
+export const gradesOnShelf = (
+  books: readonly Pick<ShelfMatch, "isSchoolTextbook" | "grade">[],
+): number[] => {
+  const found = new Set<number>();
+  for (const book of books) {
+    if (book.isSchoolTextbook && book.grade !== null) {
+      found.add(book.grade);
+    }
+  }
+  return [...found].sort((left, right) => left - right);
+};
+
+const shelfHaystack = (book: ShelfMatch): string =>
+  [
+    book.title,
+    book.authors.join(" "),
+    languageName(book.language),
+    book.categoryName,
+    book.subcategoryName,
+    book.status === "review" ? "in review" : book.status,
+    book.publishedYear === null ? "" : String(book.publishedYear),
+    book.isSchoolTextbook && book.grade !== null ? String(book.grade) : "",
+  ]
+    .join(" ")
+    .toLocaleLowerCase();
+
+const matchesText = (book: ShelfMatch, text: string): boolean => {
+  const tokens = text.trim().toLocaleLowerCase().split(/\s+/);
+  if (tokens.length === 1 && tokens[0] === "") return true;
+  const haystack = shelfHaystack(book);
+  return tokens.every((token) => haystack.includes(token));
+};
+
+export const bookMatchesShelf = (
+  book: ShelfMatch,
+  query: LibraryShelfQuery,
+): boolean => {
+  if (query.language !== "all" && book.language !== query.language) return false;
+  if (query.status !== "all" && book.status !== query.status) return false;
+  if (query.categoryId !== "" && book.categoryId !== query.categoryId) {
+    return false;
+  }
+  if (query.subcategoryId !== "" && book.subcategoryId !== query.subcategoryId) {
+    return false;
+  }
+  if (query.grade !== null && (!book.isSchoolTextbook || book.grade !== query.grade)) {
+    return false;
+  }
+  return matchesText(book, query.text);
+};
+
+export const filterLibrary = <T extends ShelfMatch>(
+  books: readonly T[],
+  query: LibraryShelfQuery,
+): T[] => books.filter((book) => bookMatchesShelf(book, query));
