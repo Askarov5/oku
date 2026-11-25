@@ -6,7 +6,7 @@ import { Button, Notice, RefreshIcon } from "@oku/ui";
 import type { NoticeState } from "@oku/ui";
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { AdminDialog } from "@/components/admin-dialog";
 import {
   TocOutlineEditor,
   entriesFromRows,
@@ -14,7 +14,9 @@ import {
   rowsFromEntries,
   type TocDraftRow,
 } from "@/components/toc-outline-editor";
+import { failureText, readError, readJson } from "@/lib/admin-request";
 import type { BookOutline } from "@/lib/book-outline";
+import { libraryBookPutFields } from "@/lib/catalog";
 import type { LibraryBook } from "@/lib/catalog";
 
 interface ContentsEditorProps {
@@ -24,19 +26,6 @@ interface ContentsEditorProps {
   onClose: () => void;
   onSaved: () => Promise<void>;
 }
-
-const bookPayload = (book: LibraryBook) => ({
-  title: book.title,
-  authors: book.authors,
-  language: book.language,
-  categoryId: book.categoryId,
-  subcategoryId: book.subcategoryId,
-  newSubcategory: "",
-  schoolTextbook: book.isSchoolTextbook,
-  grade: book.grade === null ? "" : String(book.grade),
-  publishedYear:
-    book.publishedYear === null ? "" : String(book.publishedYear),
-});
 
 const seedRows = (book: LibraryBook, outline: BookOutline): TocDraftRow[] => {
   const fromHeaders: ContentsEntry[] = outline.body
@@ -71,11 +60,6 @@ export const ContentsEditor = ({
   const [rows, setRows] = useState<TocDraftRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<NoticeState | null>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     if (!open) {
@@ -87,7 +71,7 @@ export const ContentsEditor = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
   }, [open]);
 
-  if (!open || !mounted) {
+  if (!open) {
     return null;
   }
 
@@ -111,15 +95,14 @@ export const ContentsEditor = ({
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ...bookPayload(book),
+        ...libraryBookPutFields(book),
         contentsOutline: entries,
       }),
     });
-    const json = (await response.json().catch(() => ({}))) as { error?: string };
     setBusy(false);
     if (!response.ok) {
       setMessage({
-        text: json.error ?? "Could not save the contents",
+        text: await readError(response, "Could not save the contents"),
         tone: "error",
       });
       return;
@@ -139,15 +122,18 @@ export const ContentsEditor = ({
         body: JSON.stringify({}),
       },
     );
-    const json = (await response.json().catch(() => ({}))) as {
+    const json = await readJson<{
       error?: string;
       entries?: ContentsEntry[];
       updatedHeaders?: number;
-    };
+    }>(response);
     setBusy(false);
-    if (!response.ok) {
+    if (!response.ok || !json) {
       setMessage({
-        text: json.error ?? "Could not refresh from the contents pages",
+        text: failureText(
+          response.status,
+          json?.error ?? "Could not refresh from the contents pages",
+        ),
         tone: "error",
       });
       return;
@@ -171,52 +157,27 @@ export const ContentsEditor = ({
     await onSaved();
   };
 
-  return createPortal(
-    <div
-      role="presentation"
-      className="fixed inset-0 z-50 flex items-end justify-center bg-[rgb(18_22_28/0.6)] p-4 sm:items-center"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="contents-editor-title"
-        className="flex max-h-[min(40rem,calc(100dvh-2rem))] w-full max-w-lg flex-col rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)] text-[var(--text-primary)]"
-      >
-        <div className="border-b border-[var(--border-hairline)] px-4 py-3">
-          <div className="flex items-center justify-between gap-2">
-            <h2 id="contents-editor-title" className="text-base font-semibold">
-              Contents
-            </h2>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label="Refresh levels from contents pages"
-              title="Refresh levels from contents pages"
-              disabled={busy}
-              onClick={() => void refreshFromPages()}
-            >
-              <RefreshIcon />
-            </Button>
-          </div>
-          <p className="mt-1 text-xs text-[var(--text-secondary)]">
-            Left/right change heading level. This list drives the sidebar and
-            body extraction hints.
-          </p>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 py-1">
-          {message ? (
-            <Notice tone={message.tone} className="mx-2 my-2">
-              {message.text}
-            </Notice>
-          ) : null}
-          <TocOutlineEditor rows={rows} onChange={setRows} busy={busy} />
-        </div>
+  return (
+    <AdminDialog
+      titleId="contents-editor-title"
+      title="Contents"
+      description="Left/right change heading level. This list drives the sidebar and body extraction hints."
+      maxWidth="lg"
+      onClose={onClose}
+      titleAction={
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Refresh levels from contents pages"
+          title="Refresh levels from contents pages"
+          disabled={busy}
+          onClick={() => void refreshFromPages()}
+        >
+          <RefreshIcon />
+        </Button>
+      }
+      footer={
         <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-hairline)] px-4 py-3">
           <Button type="button" disabled={busy} onClick={() => void save(false)}>
             {busy ? "Saving…" : "Save"}
@@ -239,8 +200,16 @@ export const ContentsEditor = ({
             Clear saved outline
           </Button>
         </div>
-      </div>
-    </div>,
-    document.body,
+      }
+    >
+        <div className="min-h-0 flex-1 overflow-y-auto px-2 py-1">
+          {message ? (
+            <Notice tone={message.tone} className="mx-2 my-2">
+              {message.text}
+            </Notice>
+          ) : null}
+          <TocOutlineEditor rows={rows} onChange={setRows} busy={busy} />
+        </div>
+    </AdminDialog>
   );
 };

@@ -11,9 +11,9 @@ import { AdminGate } from "@/components/admin-gate";
 import { BookCover } from "@/components/book-cover";
 import { ContentsEditor } from "@/components/contents-editor";
 import { SpecialPagesReviewModal } from "@/components/special-pages-review-modal";
-import { pageRef, unitHref, useBookOutline } from "@/lib/book-outline";
-import { shelfLine } from "@/lib/catalog";
-import { pageLabel, pageRangeLabel } from "@/lib/page-label";
+import { unitHref, unitRangeLabel, useBookOutline } from "@/lib/book-outline";
+import { bookStatusLabel, shelfLine } from "@/lib/catalog";
+import { pageLabel } from "@/lib/page-label";
 import { useBookDetail } from "@/lib/use-book-detail";
 
 const LOAD_FAILED: NoticeState = { text: "Failed to load book", tone: "error" };
@@ -24,13 +24,6 @@ const pageStatusName = (status: string): string => {
   if (status === "failed") return "Failed";
   if (status === "pending") return "Waiting";
   if (status === "stored") return "Saved";
-  return status;
-};
-
-const bookStatusName = (status: string): string => {
-  if (status === "review") return "In review";
-  if (status === "published") return "Published";
-  if (status === "draft") return "Draft";
   return status;
 };
 
@@ -190,7 +183,7 @@ const BookDetailPage = (): ReactElement => {
               <div className="flex flex-wrap items-center gap-3">
                 <StatusPill
                   status={data.book.status}
-                  label={bookStatusName(data.book.status)}
+                  label={bookStatusLabel(data.book.status)}
                 />
                 <Button
                   variant="ghost"
@@ -438,10 +431,7 @@ const BookDetailPage = (): ReactElement => {
                       ) : null}
                     </Link>
                     <span className="ml-auto shrink-0 font-mono text-xs tabular-nums text-[var(--text-secondary)]">
-                      {pageRangeLabel(
-                        pageRef(outline, unit.header.pageStart),
-                        pageRef(outline, unit.header.pageEnd),
-                      )}
+                      {unitRangeLabel(outline, unit.header)}
                     </span>
                   </li>
                 ))}

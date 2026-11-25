@@ -4,7 +4,7 @@ import {
   resolvePageRoles,
 } from "@oku/shared-types";
 import { NextResponse } from "next/server";
-import { isAuthorized, unauthorized } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { digitizePageSeeds } from "@/lib/book-page-range";
 import { parseBookUpload } from "@/lib/book-upload";
 import {
@@ -40,8 +40,9 @@ const saveCover = async (
 };
 
 export const GET = async (request: Request): Promise<NextResponse> => {
-  if (!(await isAuthorized(request))) {
-    return unauthorized();
+  const denied = await requireAdmin(request);
+  if (denied) {
+    return denied;
   }
 
   const [libraryBooks, categories] = await Promise.all([
@@ -52,8 +53,9 @@ export const GET = async (request: Request): Promise<NextResponse> => {
 };
 
 export const POST = async (request: Request): Promise<NextResponse> => {
-  if (!(await isAuthorized(request))) {
-    return unauthorized();
+  const denied = await requireAdmin(request);
+  if (denied) {
+    return denied;
   }
 
   try {

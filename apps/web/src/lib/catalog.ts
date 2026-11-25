@@ -20,6 +20,27 @@ export interface LibraryBook extends Book {
 
 export const SCHOOL_GRADES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const;
 
+/** Words already used on the shelf, the filters, and the book page. */
+export const bookStatusLabel = (status: BookStatus): string => {
+  if (status === "review") return "In review";
+  if (status === "published") return "Published";
+  return "Draft";
+};
+
+/** Metadata fields a contents or specials save sends with its own changes. */
+export const libraryBookPutFields = (book: LibraryBook) => ({
+  title: book.title,
+  authors: book.authors,
+  language: book.language,
+  categoryId: book.categoryId,
+  subcategoryId: book.subcategoryId,
+  newSubcategory: "",
+  schoolTextbook: book.isSchoolTextbook,
+  grade: book.grade === null ? "" : String(book.grade),
+  publishedYear:
+    book.publishedYear === null ? "" : String(book.publishedYear),
+});
+
 export const languageName = (language: string): string => {
   if (language === "ky") return "Kyrgyz";
   if (language === "ru") return "Russian";
@@ -129,7 +150,7 @@ const matchesText = (book: ShelfMatch, text: string): boolean => {
   return tokens.every((token) => haystack.includes(token));
 };
 
-export const bookMatchesShelf = (
+const bookMatchesShelf = (
   book: ShelfMatch,
   query: LibraryShelfQuery,
 ): boolean => {

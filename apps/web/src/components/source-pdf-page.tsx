@@ -3,7 +3,7 @@
 import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { OpenedPdf } from "@/lib/pdf-preview";
-import { openPdfUrl, renderPage } from "@/lib/pdf-preview";
+import { drawPageOnCanvas, openPdfUrl, renderPage } from "@/lib/pdf-preview";
 
 interface SourcePdfPageProps {
   /** The book's original PDF, as stored (e.g. `/api/media/.../source.pdf`). */
@@ -58,13 +58,9 @@ export const SourcePdfPage = ({
           return;
         }
         const target = canvasRef.current;
-        const context = target?.getContext("2d");
-        if (!target || !context) {
+        if (!target || !drawPageOnCanvas(target, rendered)) {
           throw new Error("Page canvas is not ready");
         }
-        target.width = rendered.width;
-        target.height = rendered.height;
-        context.drawImage(rendered, 0, 0);
         setStatus("ready");
       } catch (error) {
         console.error("SourcePdfPage failed", error);

@@ -1,14 +1,14 @@
 import { bookPages, books } from "@oku/db";
 import {
   PageExtractedJsonSchema,
-  applyContentsOutline,
   collectTocEntries,
   parseContentsOutlineFromPages,
   readStoredContents,
 } from "@oku/shared-types";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { isAuthorized, unauthorized } from "@/lib/auth";
+import { applyOutlineToPages } from "@/lib/apply-outline";
+import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 interface RouteContext {
@@ -23,8 +23,9 @@ export const POST = async (
   request: Request,
   context: RouteContext,
 ): Promise<NextResponse> => {
-  if (!(await isAuthorized(request))) {
-    return unauthorized();
+  const denied = await requireAdmin(request);
+  if (denied) {
+    return denied;
   }
 
   const { bookId } = await context.params;
@@ -89,8 +90,8 @@ export const POST = async (
     (page): page is typeof page & { extractedJson: NonNullable<typeof page.extractedJson> } =>
       page.extractedJson !== null,
   );
-  const applied = applyContentsOutline(
-    withContent.map((page) => page.extractedJson),
+  const updatedHeaders = await applyOutlineToPages(
+    withContent.map((page) => ({ id: page.row.id, json: page.extractedJson })),
     entries,
   );
 
@@ -102,24 +103,9 @@ export const POST = async (
     })
     .where(eq(books.id, bookId));
 
-  for (let index = 0; index < withContent.length; index += 1) {
-    const before = withContent[index];
-    const after = applied.pages[index];
-    if (!before || !after || before.extractedJson === after) {
-      continue;
-    }
-    await db
-      .update(bookPages)
-      .set({
-        extractedJson: after,
-        updatedAt: new Date(),
-      })
-      .where(eq(bookPages.id, before.row.id));
-  }
-
   return NextResponse.json({
     entries,
-    updatedHeaders: applied.updatedHeaders,
+    updatedHeaders,
     pageNumbers: tocPageNumbers,
     collected: collectTocEntries(
       tocPageNumbers.map((pageNumber) => {

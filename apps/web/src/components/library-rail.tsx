@@ -9,13 +9,13 @@ import { useEffect, useRef, useState } from "react";
 import { ContentsEditor } from "@/components/contents-editor";
 import {
   findPage,
-  pageRef,
   readingHref,
   unitHref,
+  unitRangeLabel,
   useBookOutline,
 } from "@/lib/book-outline";
 import type { BookOutline } from "@/lib/book-outline";
-import { pageLabel, pageRangeLabel } from "@/lib/page-label";
+import { pageLabel } from "@/lib/page-label";
 import { useBookDetail } from "@/lib/use-book-detail";
 
 interface RailLocation {
@@ -278,10 +278,7 @@ export const LibraryRail = (): ReactElement => {
                             <span
                               className={`ml-auto shrink-0 font-mono text-xs tabular-nums ${active ? "" : "text-[var(--text-on-rail-muted)]"}`.trim()}
                             >
-                              {pageRangeLabel(
-                                pageRef(outline, unit.header.pageStart),
-                                pageRef(outline, unit.header.pageEnd),
-                              )}
+                              {unitRangeLabel(outline, unit.header)}
                             </span>
                           </Link>
                           {unitPages.length > 0 ? (
@@ -336,10 +333,7 @@ export const LibraryRail = (): ReactElement => {
                         <span
                           className={`ml-auto shrink-0 font-mono text-xs tabular-nums ${active ? "" : "text-[var(--text-on-rail-muted)]"}`.trim()}
                         >
-                          {pageRangeLabel(
-                            pageRef(outline, unit.header.pageStart),
-                            pageRef(outline, unit.header.pageEnd),
-                          )}
+                          {unitRangeLabel(outline, unit.header)}
                         </span>
                       </Link>
                     </li>

@@ -16,5 +16,17 @@ export const readJson = async <T>(response: Response): Promise<T | null> => {
 export const failureText = (status: number, fallback: string): string =>
   status === 401 ? SESSION_MESSAGE : fallback;
 
+/** Error text from a JSON `{ error }` body. A 401 always means the session is gone. */
+export const readError = async (
+  response: Response,
+  fallback: string,
+): Promise<string> => {
+  if (response.status === 401) {
+    return SESSION_MESSAGE;
+  }
+  const data = await readJson<{ error?: string }>(response);
+  return data?.error ?? fallback;
+};
+
 export const isTimeout = (caught: unknown): boolean =>
   caught instanceof DOMException && caught.name === "TimeoutError";

@@ -14,8 +14,7 @@ import type { ReactElement } from "react";
 import { useEffect } from "react";
 import { AdminGate } from "@/components/admin-gate";
 import { UnitBody } from "@/components/unit-body";
-import { pageRef, unitHref, useBookOutline } from "@/lib/book-outline";
-import { pageRangeLabel } from "@/lib/page-label";
+import { unitHref, unitRangeLabel, useBookOutline } from "@/lib/book-outline";
 import { useBookDetail } from "@/lib/use-book-detail";
 
 const BACK =
@@ -112,10 +111,7 @@ const UnitRoute = (): ReactElement => {
                 Unit {index + 1} of {outline.units.length}
               </span>
               <span>
-                {pageRangeLabel(
-                  pageRef(outline, unit.header.pageStart),
-                  pageRef(outline, unit.header.pageEnd),
-                )}
+                {unitRangeLabel(outline, unit.header)}
               </span>
               <StatusPill
                 status={data.book.status}

@@ -1,7 +1,7 @@
 import { bookPages, ingestionJobs } from "@oku/db";
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { isAuthorized, unauthorized } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 interface RouteContext {
@@ -12,8 +12,9 @@ export const POST = async (
   request: Request,
   context: RouteContext,
 ): Promise<NextResponse> => {
-  if (!(await isAuthorized(request))) {
-    return unauthorized();
+  const denied = await requireAdmin(request);
+  if (denied) {
+    return denied;
   }
 
   const { jobId } = await context.params;

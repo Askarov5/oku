@@ -7,18 +7,15 @@ import {
   Button,
   Card,
   ChevronDownIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
   ChevronUpIcon,
   CloseIcon,
   Notice,
-  buttonClasses,
   fieldClass,
 } from "@oku/ui";
 import type { NoticeState } from "@oku/ui";
-import Link from "next/link";
 import type { ReactElement } from "react";
 import { useRef, useState } from "react";
+import { PagerLink } from "@/components/pager-link";
 import { RichText } from "@/components/rich-text";
 import { TableView } from "@/components/table-view";
 import { modelLabel } from "@/lib/extraction-model";
@@ -37,11 +34,6 @@ interface PageReviewEditorProps {
   activity: string | null;
   onRetry: () => void;
   onSaved: () => void;
-}
-
-interface PagerLinkProps {
-  href: string | null;
-  direction: "previous" | "next";
 }
 
 const emptyPage = (pageNumber: number): PageExtractedJson => ({
@@ -88,43 +80,6 @@ const textRows = (markdown: string): number => {
     0,
   );
   return Math.min(30, Math.max(5, wrapped + 1));
-};
-
-/* Icon-only on phones, labelled from sm. An end of the book keeps its slot, dimmed. */
-const PagerLink = ({ href, direction }: PagerLinkProps): ReactElement => {
-  const label = direction === "previous" ? "Previous" : "Next";
-  const content = (
-    <>
-      {direction === "previous" ? <ChevronLeftIcon /> : null}
-      <span className="hidden sm:inline">{label}</span>
-      {direction === "next" ? <ChevronRightIcon /> : null}
-    </>
-  );
-
-  if (!href) {
-    return (
-      <span
-        aria-hidden="true"
-        className={buttonClasses({
-          variant: "ghost",
-          size: "icon",
-          className: "opacity-40",
-        })}
-      >
-        {content}
-      </span>
-    );
-  }
-
-  return (
-    <Link
-      href={href}
-      aria-label={`${label} page`}
-      className={buttonClasses({ variant: "ghost", size: "icon" })}
-    >
-      {content}
-    </Link>
-  );
 };
 
 export const PageReviewEditor = ({

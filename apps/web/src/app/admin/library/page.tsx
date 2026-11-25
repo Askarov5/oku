@@ -28,6 +28,7 @@ import { LibraryFilters } from "@/components/library-filters";
 import type { Category, LibraryBook, LibraryShelfQuery } from "@/lib/catalog";
 import {
   EMPTY_SHELF_QUERY,
+  bookStatusLabel,
   filterLibrary,
   gradesOnShelf,
   languageName,
@@ -54,7 +55,7 @@ interface BookMark {
 const BOOK_MARK: Record<BookStatus, BookMark> = {
   published: {
     letter: "P",
-    name: "Published",
+    name: bookStatusLabel("published"),
     style: {
       color: "var(--status-reviewed-on)",
       borderColor: "var(--status-reviewed-fill)",
@@ -63,7 +64,7 @@ const BOOK_MARK: Record<BookStatus, BookMark> = {
   },
   review: {
     letter: "R",
-    name: "In review",
+    name: bookStatusLabel("review"),
     style: {
       color: "var(--status-extracted)",
       borderColor: "var(--status-extracted)",
@@ -72,7 +73,7 @@ const BOOK_MARK: Record<BookStatus, BookMark> = {
   },
   draft: {
     letter: "D",
-    name: "Draft",
+    name: bookStatusLabel("draft"),
     style: {
       color: "var(--status-pending)",
       borderColor: "var(--status-pending-line)",

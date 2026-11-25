@@ -1,15 +1,14 @@
 "use client";
 
 import {
-  PageExtractedJsonSchema,
   collectBlockText,
+  collectTocEntries,
   pageRoleLabel,
   readStoredContents,
 } from "@oku/shared-types";
 import type {
   ContentsEntry,
   CoverMeta,
-  HeadingLevel,
   PageExtractedJson,
   PageRole,
 } from "@oku/shared-types";
@@ -17,7 +16,7 @@ import { Button, Notice, fieldClass } from "@oku/ui";
 import type { NoticeState } from "@oku/ui";
 import type { ReactElement } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { AdminDialog } from "@/components/admin-dialog";
 import { RichText } from "@/components/rich-text";
 import {
   TocOutlineEditor,
@@ -25,6 +24,10 @@ import {
   rowsFromEntries,
   type TocDraftRow,
 } from "@/components/toc-outline-editor";
+import { readError } from "@/lib/admin-request";
+import { readPageJson } from "@/lib/book-outline";
+import { resolveDigitizeEnd } from "@/lib/book-page-range";
+import { libraryBookPutFields } from "@/lib/catalog";
 import type { LibraryBook } from "@/lib/catalog";
 import type { BookDetail } from "@/lib/use-book-detail";
 
@@ -66,19 +69,6 @@ const markdownFromPage = (json: PageExtractedJson | null): string => {
     .join("\n\n");
 };
 
-const bookPayload = (book: LibraryBook) => ({
-  title: book.title,
-  authors: book.authors,
-  language: book.language,
-  categoryId: book.categoryId,
-  subcategoryId: book.subcategoryId,
-  newSubcategory: "",
-  schoolTextbook: book.isSchoolTextbook,
-  grade: book.grade === null ? "" : String(book.grade),
-  publishedYear:
-    book.publishedYear === null ? "" : String(book.publishedYear),
-});
-
 /**
  * Review gate after Phase 1: edit TOC levels, inspect special pages, then
  * approve and convert body pages.
@@ -90,7 +80,6 @@ export const SpecialPagesReviewModal = ({
   onClose,
   onSaved,
 }: SpecialPagesReviewModalProps): ReactElement | null => {
-  const [mounted, setMounted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<NoticeState | null>(null);
   const [rows, setRows] = useState<TocDraftRow[]>([]);
@@ -117,11 +106,7 @@ export const SpecialPagesReviewModal = ({
 
   const extractedFor = (pageNumber: number): PageExtractedJson | null => {
     const page = detail.pages.find((item) => item.pageNumber === pageNumber);
-    if (!page?.extractedJson) {
-      return null;
-    }
-    const parsed = PageExtractedJsonSchema.safeParse(page.extractedJson);
-    return parsed.success ? parsed.data : null;
+    return page ? readPageJson(page) : null;
   };
 
   const tocReady = specialPages
@@ -137,8 +122,10 @@ export const SpecialPagesReviewModal = ({
       page.pageRole === "body" &&
       page.pageNumber >= (book.digitizePageStart ?? 1) &&
       page.pageNumber <=
-        (book.digitizePageEnd ??
-          Math.max(...detail.pages.map((item) => item.pageNumber), 1)) &&
+        resolveDigitizeEnd(
+          book.digitizePageEnd,
+          detail.pages.map((item) => item.pageNumber),
+        ) &&
       page.status === "stored",
   ).length;
 
@@ -151,24 +138,18 @@ export const SpecialPagesReviewModal = ({
   })();
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
     if (!open) {
       return;
     }
     const stored = readStoredContents(book.contentsOutline) ?? [];
-    const fromPages: ContentsEntry[] = specialPages
-      .filter((page) => page.pageRole === "table_of_contents")
-      .flatMap((page) => {
-        const json = extractedFor(page.pageNumber);
-        return (json?.tocEntries ?? []).map((entry) => ({
-          title: entry.title,
-          level: entry.level as HeadingLevel,
-          printedPage: entry.printedPage,
-        }));
-      });
+    const fromPages = collectTocEntries(
+      specialPages
+        .filter((page) => page.pageRole === "table_of_contents")
+        .map((page) => ({
+          pageNumber: page.pageNumber,
+          extractedJson: extractedFor(page.pageNumber),
+        })),
+    );
     setRows(rowsFromEntries(stored.length > 0 ? stored : fromPages));
     setTab(tabs[0] ?? "table_of_contents");
     setMessage(null);
@@ -185,7 +166,7 @@ export const SpecialPagesReviewModal = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
   }, [open]);
 
-  if (!open || !mounted) {
+  if (!open) {
     return null;
   }
 
@@ -202,16 +183,13 @@ export const SpecialPagesReviewModal = ({
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ...bookPayload(book),
+        ...libraryBookPutFields(book),
         contentsOutline: parsed.entries,
       }),
     });
     if (!response.ok) {
-      const json = (await response.json().catch(() => ({}))) as {
-        error?: string;
-      };
       setMessage({
-        text: json.error ?? "Could not save the contents",
+        text: await readError(response, "Could not save the contents"),
         tone: "error",
       });
       return null;
@@ -252,14 +230,10 @@ export const SpecialPagesReviewModal = ({
         markSpecialsReviewed: true,
       }),
     });
-    const json = (await response.json().catch(() => ({}))) as {
-      error?: string;
-      bodyPageCount?: number;
-    };
     setBusy(false);
     if (!response.ok) {
       setMessage({
-        text: json.error ?? "Could not start body conversion",
+        text: await readError(response, "Could not start body conversion"),
         tone: "error",
       });
       return;
@@ -278,7 +252,7 @@ export const SpecialPagesReviewModal = ({
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ...bookPayload(book),
+        ...libraryBookPutFields(book),
         title: coverMeta.title?.trim() || book.title,
         authors:
           coverMeta.authors && coverMeta.authors.length > 0
@@ -294,11 +268,8 @@ export const SpecialPagesReviewModal = ({
     });
     setBusy(false);
     if (!response.ok) {
-      const json = (await response.json().catch(() => ({}))) as {
-        error?: string;
-      };
       setMessage({
-        text: json.error ?? "Could not sync cover metadata",
+        text: await readError(response, "Could not sync cover metadata"),
         tone: "error",
       });
       return;
@@ -328,34 +299,22 @@ export const SpecialPagesReviewModal = ({
             ? setAnswersDraft
             : null;
 
-  return createPortal(
-    <div
-      role="presentation"
-      className="fixed inset-0 z-50 flex items-end justify-center bg-[rgb(18_22_28/0.6)] p-4 sm:items-center"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) {
-          onClose();
-        }
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="special-review-title"
-        className="flex max-h-[min(48rem,calc(100dvh-2rem))] w-full max-w-5xl flex-col rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)] text-[var(--text-primary)]"
-      >
-        <div className="border-b border-[var(--border-hairline)] px-4 py-3">
-          <h2 id="special-review-title" className="text-base font-semibold">
-            Review special pages
-          </h2>
-          <p className="mt-1 text-xs text-[var(--text-secondary)]">
-            {specialsPending
-              ? "Special pages are still extracting…"
-              : tocReady
-                ? "Edit the table of contents, then approve to convert the body."
-                : "Waiting for table of contents pages…"}
-          </p>
-          {tabs.length > 0 ? (
+  return (
+    <AdminDialog
+      titleId="special-review-title"
+      title="Review special pages"
+      description={
+        specialsPending
+          ? "Special pages are still extracting…"
+          : tocReady
+            ? "Edit the table of contents, then approve to convert the body."
+            : "Waiting for table of contents pages…"
+      }
+      maxWidth="5xl"
+      busy={busy}
+      onClose={onClose}
+      headerExtra={
+        tabs.length > 0 ? (
             <div
               role="tablist"
               aria-label="Special page roles"
@@ -378,9 +337,39 @@ export const SpecialPagesReviewModal = ({
                 </button>
               ))}
             </div>
-          ) : null}
+          ) : null
+      }
+      footer={
+        <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-hairline)] px-4 py-3">
+          <Button
+            type="button"
+            disabled={busy || specialsPending || bodyPageCount === 0}
+            onClick={() => void convertBody()}
+          >
+            {busy
+              ? "Working…"
+              : `Approve & convert body (${bodyPageCount})`}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => void saveDraft()}
+          >
+            Save draft
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="ml-auto"
+            disabled={busy}
+            onClick={onClose}
+          >
+            Close
+          </Button>
         </div>
-
+      }
+    >
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           {message ? (
             <Notice tone={message.tone} className="mb-3">
@@ -509,37 +498,6 @@ export const SpecialPagesReviewModal = ({
             </div>
           )}
         </div>
-
-        <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-hairline)] px-4 py-3">
-          <Button
-            type="button"
-            disabled={busy || specialsPending || bodyPageCount === 0}
-            onClick={() => void convertBody()}
-          >
-            {busy
-              ? "Working…"
-              : `Approve & convert body (${bodyPageCount})`}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={busy}
-            onClick={() => void saveDraft()}
-          >
-            Save draft
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            className="ml-auto"
-            disabled={busy}
-            onClick={onClose}
-          >
-            Close
-          </Button>
-        </div>
-      </div>
-    </div>,
-    document.body,
+    </AdminDialog>
   );
 };

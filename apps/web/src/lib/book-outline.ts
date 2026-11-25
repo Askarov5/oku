@@ -2,14 +2,15 @@ import {
   PageExtractedJsonSchema,
   buildUnits,
   bodyUnits,
+  collectTocEntries,
   matterUnits,
   readStoredContents,
   type ContentsEntry,
-  type HeadingLevel,
   type PageRole,
   type UnitDraft,
 } from "@oku/shared-types";
 import { useMemo } from "react";
+import { pageRangeLabel } from "./page-label";
 import type { PageRef } from "./page-label";
 import type { BookDetail } from "./use-book-detail";
 
@@ -66,16 +67,11 @@ export const buildOutline = (
   const contents: ContentsEntry[] | null =
     readStoredContents(options.contentsOutline) ??
     (() => {
-      const fromToc: ContentsEntry[] = extracted.flatMap((page) => {
-        if (pageRoles.get(page.pageNumber) !== "table_of_contents") {
-          return [];
-        }
-        return (page.tocEntries ?? []).map((entry) => ({
-          title: entry.title,
-          level: entry.level as HeadingLevel,
-          printedPage: entry.printedPage,
-        }));
-      });
+      const fromToc = collectTocEntries(
+        extracted
+          .filter((page) => pageRoles.get(page.pageNumber) === "table_of_contents")
+          .map((page) => ({ pageNumber: page.pageNumber, extractedJson: page })),
+      );
       return fromToc.length > 0 ? fromToc : null;
     })();
 
@@ -135,6 +131,15 @@ export const pageRef = (outline: BookOutline, pageNumber: number): PageRef => ({
   printedPage: outline.printed.get(pageNumber) ?? null,
 });
 
+export const unitRangeLabel = (
+  outline: BookOutline,
+  header: { pageStart: number; pageEnd: number },
+): string =>
+  pageRangeLabel(
+    pageRef(outline, header.pageStart),
+    pageRef(outline, header.pageEnd),
+  );
+
 export const unitHref = (bookId: string, unitIndex: number): string =>
   `/admin/library/${bookId}/units/${unitIndex + 1}`;
 
@@ -150,26 +155,6 @@ export const readingHref = (
   return unitIndex === undefined
     ? `/admin/library/${bookId}/pages/${pageNumber}`
     : `${unitHref(bookId, unitIndex)}#${pageAnchorId(pageNumber)}`;
-};
-
-/** Best unit (or page) link for a TOC printed page label. */
-export const contentsEntryHref = (
-  bookId: string,
-  outline: BookOutline,
-  entry: ContentsEntry,
-): string => {
-  const pageNumber = findPage(outline, entry.printedPage);
-  if (pageNumber !== null) {
-    return readingHref(bookId, outline, pageNumber);
-  }
-  const match = outline.body.find(
-    (unit) =>
-      unit.header.title.trim().toLowerCase() ===
-      entry.title.trim().toLowerCase(),
-  );
-  return match
-    ? unitHref(bookId, match.orderIndex)
-    : `/admin/library/${bookId}`;
 };
 
 export const useBookOutline = (data: BookDetail | null): BookOutline | null =>

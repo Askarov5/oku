@@ -203,9 +203,9 @@ export const UnitContentSchema = z.object({
 
 export type UnitContent = z.infer<typeof UnitContentSchema>;
 
-export const KYRGYZ_SPECIAL_LETTERS = /[ӨөҮүҢң]/;
+const KYRGYZ_SPECIAL_LETTERS = /[ӨөҮүҢң]/;
 
-export const hasKyrgyzLetters = (text: string): boolean =>
+const hasKyrgyzLetters = (text: string): boolean =>
   KYRGYZ_SPECIAL_LETTERS.test(text);
 
 export const collectBlockText = (blocks: PageBlock[]): string =>

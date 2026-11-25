@@ -5,7 +5,6 @@ import {
   Button,
   Card,
   ChevronLeftIcon,
-  ChevronRightIcon,
   Notice,
   StatusPill,
   buttonClasses,
@@ -16,7 +15,9 @@ import type { ReactElement } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { AdminGate } from "@/components/admin-gate";
 import { PageReviewEditor } from "@/components/page-review-editor";
+import { PagerLink } from "@/components/pager-link";
 import { SourcePdfPage } from "@/components/source-pdf-page";
+import { failureText, readJson } from "@/lib/admin-request";
 import { readPageJson, readingHref, useBookOutline } from "@/lib/book-outline";
 import { pageLabel } from "@/lib/page-label";
 import { useBookDetail } from "@/lib/use-book-detail";
@@ -42,47 +43,6 @@ const readingNote = (stage: string | null): string => {
     default:
       return "Waiting for the reader.";
   }
-};
-
-interface PagerLinkProps {
-  href: string | null;
-  direction: "previous" | "next";
-}
-
-const PagerLink = ({ href, direction }: PagerLinkProps): ReactElement => {
-  const label = direction === "previous" ? "Previous" : "Next";
-  const content = (
-    <>
-      {direction === "previous" ? <ChevronLeftIcon /> : null}
-      <span className="hidden sm:inline">{label}</span>
-      {direction === "next" ? <ChevronRightIcon /> : null}
-    </>
-  );
-
-  if (!href) {
-    return (
-      <span
-        aria-hidden="true"
-        className={buttonClasses({
-          variant: "ghost",
-          size: "icon",
-          className: "opacity-40",
-        })}
-      >
-        {content}
-      </span>
-    );
-  }
-
-  return (
-    <Link
-      href={href}
-      aria-label={`${label} page`}
-      className={buttonClasses({ variant: "ghost", size: "icon" })}
-    >
-      {content}
-    </Link>
-  );
 };
 
 const PageReviewRoute = (): ReactElement => {
@@ -185,13 +145,18 @@ const PageReviewRoute = (): ReactElement => {
         body: JSON.stringify({ force: page.status === "reviewed" }),
       },
     );
-    const data = (await response.json().catch(() => ({}))) as {
+    const data = await readJson<{
       page?: BookPage;
       error?: string;
-    };
-    if (!response.ok || !data.page) {
+    }>(response);
+    if (!response.ok || !data?.page) {
       setDigitizing(false);
-      setError(data.error ?? (stored ? "Digitize failed" : "Retry failed"));
+      setError(
+        failureText(
+          response.status,
+          data?.error ?? (stored ? "Digitize failed" : "Retry failed"),
+        ),
+      );
       return;
     }
     setStage(data.page.stage);
