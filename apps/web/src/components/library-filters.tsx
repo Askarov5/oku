@@ -4,7 +4,7 @@ import { Button, fieldClass } from "@oku/ui";
 import type { ReactElement } from "react";
 import { useId } from "react";
 import type { Category, LibraryShelfQuery, ShelfLanguage, ShelfStatus } from "@/lib/catalog";
-import { shelfQueryActive } from "@/lib/catalog";
+import { bookStatusLabel, shelfQueryActive } from "@/lib/catalog";
 
 interface LibraryFiltersProps {
   query: LibraryShelfQuery;
@@ -18,9 +18,9 @@ interface LibraryFiltersProps {
 
 const STATUS_OPTIONS: { value: ShelfStatus; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "draft", label: "Draft" },
-  { value: "review", label: "In review" },
-  { value: "published", label: "Published" },
+  { value: "draft", label: bookStatusLabel("draft") },
+  { value: "review", label: bookStatusLabel("review") },
+  { value: "published", label: bookStatusLabel("published") },
 ];
 
 const LANGUAGE_OPTIONS: { value: ShelfLanguage; label: string }[] = [

@@ -63,7 +63,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
 export const isModelId = (value: unknown): value is string =>
   typeof value === "string" && MODEL_ID.test(value);
 
-export const providerOf = (id: string): ProviderId | null => {
+const providerOf = (id: string): ProviderId | null => {
   const name = id.slice(0, id.indexOf("/"));
   return PROVIDERS.find((provider) => provider === name) ?? null;
 };
@@ -88,7 +88,7 @@ const byLabel = (a: ModelOption, b: ModelOption): number =>
   a.label.localeCompare(b.label, "en", { numeric: true });
 
 /** Offered when Google's list is unavailable. */
-export const KNOWN_MODEL_OPTIONS: ModelOption[] = [
+const KNOWN_MODEL_OPTIONS: ModelOption[] = [
   "gemini/gemini-3.5-flash-lite",
   "gemini/gemini-3.6-flash",
   "gemini/gemini-3.8-flash",

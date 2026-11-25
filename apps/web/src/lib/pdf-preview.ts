@@ -69,6 +69,21 @@ export const openPdfUrl = async (url: string): Promise<OpenedPdf> => {
   return openFromData(new Uint8Array(await response.arrayBuffer()));
 };
 
+/** Copies a rendered page onto the canvas the caller is showing. */
+export const drawPageOnCanvas = (
+  canvas: HTMLCanvasElement,
+  rendered: HTMLCanvasElement,
+): boolean => {
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return false;
+  }
+  canvas.width = rendered.width;
+  canvas.height = rendered.height;
+  context.drawImage(rendered, 0, 0);
+  return true;
+};
+
 /** Draws one page (1-based) onto a new canvas `width` pixels wide. */
 export const renderPage = async (
   doc: PDFDocumentProxy,

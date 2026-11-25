@@ -7,7 +7,7 @@ import {
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { books } from "@oku/db";
-import { isAuthorized, unauthorized } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 interface RouteContext {
@@ -18,8 +18,9 @@ export const GET = async (
   request: Request,
   context: RouteContext,
 ): Promise<NextResponse> => {
-  if (!(await isAuthorized(request))) {
-    return unauthorized();
+  const denied = await requireAdmin(request);
+  if (denied) {
+    return denied;
   }
 
   const { bookId, pageNumber: pageNumberRaw } = await context.params;
@@ -45,8 +46,9 @@ export const PUT = async (
   request: Request,
   context: RouteContext,
 ): Promise<NextResponse> => {
-  if (!(await isAuthorized(request))) {
-    return unauthorized();
+  const denied = await requireAdmin(request);
+  if (denied) {
+    return denied;
   }
 
   const { bookId, pageNumber: pageNumberRaw } = await context.params;

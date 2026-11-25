@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Button,
   Card,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -14,8 +15,7 @@ import type { ReactElement } from "react";
 import { useEffect } from "react";
 import { AdminGate } from "@/components/admin-gate";
 import { UnitBody } from "@/components/unit-body";
-import { pageRef, unitHref, useBookOutline } from "@/lib/book-outline";
-import { pageRangeLabel } from "@/lib/page-label";
+import { unitHref, unitRangeLabel, useBookOutline } from "@/lib/book-outline";
 import { useBookDetail } from "@/lib/use-book-detail";
 
 const BACK =
@@ -56,7 +56,7 @@ const UnitRoute = (): ReactElement => {
   const params = useParams<{ bookId: string; unitNumber: string }>();
   const bookId = params.bookId;
   const index = Number(params.unitNumber) - 1;
-  const { data, failed } = useBookDetail(bookId);
+  const { data, failed, refresh } = useBookDetail(bookId);
   const outline = useBookOutline(data);
   const unit = outline?.units[index] ?? null;
   const ready = unit !== null;
@@ -85,7 +85,12 @@ const UnitRoute = (): ReactElement => {
     <AdminGate>
       {!data || !outline ? (
         failed ? (
-          <Notice tone="error">Failed to load book</Notice>
+          <div className="flex flex-col items-start gap-3">
+            <Notice tone="error">Failed to load book</Notice>
+            <Button variant="ghost" onClick={() => void refresh()}>
+              Try again
+            </Button>
+          </div>
         ) : (
           <p className="text-[var(--text-secondary)]">Loading unit…</p>
         )
@@ -112,10 +117,7 @@ const UnitRoute = (): ReactElement => {
                 Unit {index + 1} of {outline.units.length}
               </span>
               <span>
-                {pageRangeLabel(
-                  pageRef(outline, unit.header.pageStart),
-                  pageRef(outline, unit.header.pageEnd),
-                )}
+                {unitRangeLabel(outline, unit.header)}
               </span>
               <StatusPill
                 status={data.book.status}

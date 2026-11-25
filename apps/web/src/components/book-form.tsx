@@ -676,7 +676,7 @@ export const BookForm = ({
             </details>
             <span className="absolute right-3 top-2">
               <FieldHint label="Page roles" tooltipId={rolesHintId}>
-                Optional. Name special pages so they are read with their own instructions before the lessons. Use lists or ranges such as 1, 2 or 222-223. Leave every field blank to digitize the body in one pass.
+                Optional. Name special pages so they are read with their own instructions before the lessons. Every field accepts a list, a range, or an array of page numbers, such as 1, 2, 222-223, or [248, 249]. Leave every field blank to digitize the body in one pass.
               </FieldHint>
             </span>
             </div>

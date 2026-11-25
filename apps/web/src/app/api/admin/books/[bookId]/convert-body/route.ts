@@ -7,7 +7,8 @@ import {
 } from "@oku/shared-types";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { isAuthorized, unauthorized } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
+import { resolveDigitizeEnd } from "@/lib/book-page-range";
 import { getDb } from "@/lib/db";
 
 interface RouteContext {
@@ -22,8 +23,9 @@ export const POST = async (
   request: Request,
   context: RouteContext,
 ): Promise<NextResponse> => {
-  if (!(await isAuthorized(request))) {
-    return unauthorized();
+  const denied = await requireAdmin(request);
+  if (denied) {
+    return denied;
   }
 
   const { bookId } = await context.params;
@@ -76,9 +78,10 @@ export const POST = async (
     .select()
     .from(bookPages)
     .where(eq(bookPages.bookId, bookId));
-  const pageEnd =
-    book.digitizePageEnd ??
-    Math.max(...pages.map((page) => page.pageNumber), 1);
+  const pageEnd = resolveDigitizeEnd(
+    book.digitizePageEnd,
+    pages.map((page) => page.pageNumber),
+  );
 
   const bodyPages = pages
     .filter(

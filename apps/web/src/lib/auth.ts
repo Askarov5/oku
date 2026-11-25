@@ -20,3 +20,13 @@ export const isAuthorized = async (
 
 export const unauthorized = (): NextResponse =>
   NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+/** The 401 response when the caller is not an admin, otherwise null. */
+export const requireAdmin = async (
+  request: Request,
+): Promise<NextResponse | null> => {
+  if (!(await isAuthorized(request))) {
+    return unauthorized();
+  }
+  return null;
+};

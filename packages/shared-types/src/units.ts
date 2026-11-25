@@ -1,6 +1,3 @@
-import {
-  headingLevel,
-} from "./block-ast.js";
 import type {
   HeadingLevel,
   PageBlock,
@@ -195,26 +192,3 @@ export const matterUnits = (units: UnitDraft[]): UnitDraft[] =>
   units.filter(
     (unit) => unit.header.kind && unit.header.kind !== "body",
   );
-
-/** The unit a reader lands in when asking for a page: the one holding that page's anchor. */
-export const unitIndexForPage = (
-  units: UnitContent[],
-  pageNumber: number,
-): number => {
-  const anchored = units.findIndex((unit) =>
-    unit.body.some(
-      (block) =>
-        block.type === "page_anchor" && block.pageNumber === pageNumber,
-    ),
-  );
-  if (anchored >= 0) {
-    return anchored;
-  }
-  return units.findIndex(
-    (unit) =>
-      unit.header.pageStart <= pageNumber && pageNumber <= unit.header.pageEnd,
-  );
-};
-
-/** Re-export for callers that already import heading helpers from units. */
-export { headingLevel };

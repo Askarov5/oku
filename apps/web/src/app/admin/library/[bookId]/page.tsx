@@ -11,9 +11,9 @@ import { AdminGate } from "@/components/admin-gate";
 import { BookCover } from "@/components/book-cover";
 import { ContentsEditor } from "@/components/contents-editor";
 import { SpecialPagesReviewModal } from "@/components/special-pages-review-modal";
-import { pageRef, unitHref, useBookOutline } from "@/lib/book-outline";
-import { shelfLine } from "@/lib/catalog";
-import { pageLabel, pageRangeLabel } from "@/lib/page-label";
+import { unitHref, unitRangeLabel, useBookOutline } from "@/lib/book-outline";
+import { bookStatusLabel, shelfLine } from "@/lib/catalog";
+import { pageLabel } from "@/lib/page-label";
 import { useBookDetail } from "@/lib/use-book-detail";
 
 const LOAD_FAILED: NoticeState = { text: "Failed to load book", tone: "error" };
@@ -24,13 +24,6 @@ const pageStatusName = (status: string): string => {
   if (status === "failed") return "Failed";
   if (status === "pending") return "Waiting";
   if (status === "stored") return "Saved";
-  return status;
-};
-
-const bookStatusName = (status: string): string => {
-  if (status === "review") return "In review";
-  if (status === "published") return "Published";
-  if (status === "draft") return "Draft";
   return status;
 };
 
@@ -156,13 +149,15 @@ const BookDetailPage = (): ReactElement => {
               <div className="mt-2 flex items-start gap-4 coarse:mt-0">
                 <BookCover
                   url={data.book.coverImageUrl}
+                  width={72}
+                  height={96}
                   className="h-24 w-[72px]"
                   eager
                 />
                 <div className="min-w-0">
                   <h2
                     lang={data.book.language}
-                    className="text-2xl font-bold tracking-tight"
+                    className="break-words text-2xl font-bold tracking-tight"
                   >
                     {data.book.title}
                   </h2>
@@ -170,7 +165,7 @@ const BookDetailPage = (): ReactElement => {
                     {shelfLine(data.book)}
                   </p>
                   {data.book.authors.length > 0 ? (
-                    <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                    <p className="mt-1 break-words text-sm text-[var(--text-secondary)]">
                       {data.book.authors.join(", ")}
                     </p>
                   ) : null}
@@ -190,7 +185,7 @@ const BookDetailPage = (): ReactElement => {
               <div className="flex flex-wrap items-center gap-3">
                 <StatusPill
                   status={data.book.status}
-                  label={bookStatusName(data.book.status)}
+                  label={bookStatusLabel(data.book.status)}
                 />
                 <Button
                   variant="ghost"
@@ -359,7 +354,7 @@ const BookDetailPage = (): ReactElement => {
                   return (
                     <li
                       key={page.id}
-                      className="relative flex flex-col gap-2 border-b border-r border-[var(--border-hairline)] bg-[var(--bg-surface)] p-3 transition-colors hover:bg-[var(--bg-hover)] active:bg-[var(--bg-hover)]"
+                      className="relative flex flex-col gap-2 border-b border-r border-[var(--border-hairline)] bg-[var(--bg-surface)] p-3 transition-colors [content-visibility:auto] [contain-intrinsic-block-size:auto_8rem] hover:bg-[var(--bg-hover)] active:bg-[var(--bg-hover)]"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <Link
@@ -438,10 +433,7 @@ const BookDetailPage = (): ReactElement => {
                       ) : null}
                     </Link>
                     <span className="ml-auto shrink-0 font-mono text-xs tabular-nums text-[var(--text-secondary)]">
-                      {pageRangeLabel(
-                        pageRef(outline, unit.header.pageStart),
-                        pageRef(outline, unit.header.pageEnd),
-                      )}
+                      {unitRangeLabel(outline, unit.header)}
                     </span>
                   </li>
                 ))}

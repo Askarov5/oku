@@ -7,18 +7,15 @@ import {
   Button,
   Card,
   ChevronDownIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
   ChevronUpIcon,
   CloseIcon,
   Notice,
-  buttonClasses,
   fieldClass,
 } from "@oku/ui";
 import type { NoticeState } from "@oku/ui";
-import Link from "next/link";
 import type { ReactElement } from "react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { PagerLink } from "@/components/pager-link";
 import { RichText } from "@/components/rich-text";
 import { TableView } from "@/components/table-view";
 import { modelLabel } from "@/lib/extraction-model";
@@ -37,11 +34,6 @@ interface PageReviewEditorProps {
   activity: string | null;
   onRetry: () => void;
   onSaved: () => void;
-}
-
-interface PagerLinkProps {
-  href: string | null;
-  direction: "previous" | "next";
 }
 
 const emptyPage = (pageNumber: number): PageExtractedJson => ({
@@ -63,6 +55,11 @@ const BLOCK_NAME: Record<PageBlock["type"], string> = {
 
 const FIELD = fieldClass;
 const TOOL = "px-2 coarse:min-w-[44px]";
+/* The review bar is 69px. 93px clears it plus the 24px gap under the top pin. */
+const CLEAR_REVIEW_BAR =
+  "[&_button]:scroll-mt-[93px] [&_input]:scroll-mt-[93px] [&_select]:scroll-mt-[93px] [&_textarea]:scroll-mt-[93px] [&_button]:scroll-mb-[calc(5.5rem+env(safe-area-inset-bottom))] [&_input]:scroll-mb-[calc(5.5rem+env(safe-area-inset-bottom))] [&_select]:scroll-mb-[calc(5.5rem+env(safe-area-inset-bottom))] [&_textarea]:scroll-mb-[calc(5.5rem+env(safe-area-inset-bottom))]";
+
+const LEAVE_WARNING = "Leave this page? Unsaved edits will be lost.";
 
 const isEmpty = (block: PageBlock): boolean => {
   switch (block.type) {
@@ -90,43 +87,6 @@ const textRows = (markdown: string): number => {
   return Math.min(30, Math.max(5, wrapped + 1));
 };
 
-/* Icon-only on phones, labelled from sm. An end of the book keeps its slot, dimmed. */
-const PagerLink = ({ href, direction }: PagerLinkProps): ReactElement => {
-  const label = direction === "previous" ? "Previous" : "Next";
-  const content = (
-    <>
-      {direction === "previous" ? <ChevronLeftIcon /> : null}
-      <span className="hidden sm:inline">{label}</span>
-      {direction === "next" ? <ChevronRightIcon /> : null}
-    </>
-  );
-
-  if (!href) {
-    return (
-      <span
-        aria-hidden="true"
-        className={buttonClasses({
-          variant: "ghost",
-          size: "icon",
-          className: "opacity-40",
-        })}
-      >
-        {content}
-      </span>
-    );
-  }
-
-  return (
-    <Link
-      href={href}
-      aria-label={`${label} page`}
-      className={buttonClasses({ variant: "ghost", size: "icon" })}
-    >
-      {content}
-    </Link>
-  );
-};
-
 export const PageReviewEditor = ({
   bookId,
   pageNumber,
@@ -140,10 +100,70 @@ export const PageReviewEditor = ({
   onSaved,
 }: PageReviewEditorProps): ReactElement => {
   const [json, setJson] = useState<PageExtractedJson>(
-    initialJson ?? emptyPage(pageNumber),
+    () => initialJson ?? emptyPage(pageNumber),
   );
+  const baselineRef = useRef(json);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<NoticeState | null>(null);
+  const dirty =
+    JSON.stringify(json) !== JSON.stringify(baselineRef.current);
+
+  useEffect(() => {
+    if (!dirty) {
+      return undefined;
+    }
+    const warn = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    const refuse = (): boolean => {
+      if (window.confirm(LEAVE_WARNING)) {
+        return false;
+      }
+      return true;
+    };
+    const onClick = (event: MouseEvent): void => {
+      if (event.defaultPrevented || event.button !== 0) {
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      const anchor = target.closest("a");
+      if (!anchor) {
+        return;
+      }
+      const href = anchor.getAttribute("href");
+      if (!href || href.startsWith("#") || anchor.target === "_blank") {
+        return;
+      }
+      if (refuse()) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    const onSubmit = (event: SubmitEvent): void => {
+      if (event.defaultPrevented) {
+        return;
+      }
+      if (refuse()) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener("beforeunload", warn);
+    document.addEventListener("click", onClick, true);
+    document.addEventListener("submit", onSubmit, true);
+    return () => {
+      window.removeEventListener("beforeunload", warn);
+      document.removeEventListener("click", onClick, true);
+      document.removeEventListener("submit", onSubmit, true);
+    };
+  }, [dirty]);
   // Text areas by block id. A text area keeps its caret after losing focus,
   // so "Split at cursor" reads the position when the button is pressed.
   const areas = useRef<Record<string, HTMLTextAreaElement | null>>({});
@@ -270,6 +290,8 @@ export const PageReviewEditor = ({
       setMessage({ text: data.error ?? "Save failed", tone: "error" });
       return;
     }
+    baselineRef.current = extractedJson;
+    setJson(extractedJson);
     setMessage({
       text: markReviewed ? "Marked reviewed" : "Saved",
       tone: "info",
@@ -360,6 +382,8 @@ export const PageReviewEditor = ({
               <img
                 src={rawImageUrl}
                 alt={`Page ${pageNumber}`}
+                width={800}
+                height={1131}
                 className="mx-auto max-h-[70vh] w-full object-contain short:max-h-none lg:max-h-[calc(100dvh-194px)] lg:short:max-h-[calc(100dvh-125px)]"
               />
             ) : (
@@ -370,7 +394,7 @@ export const PageReviewEditor = ({
           </div>
         </Card>
 
-        <div className="min-w-0">
+        <div className={`min-w-0 ${CLEAR_REVIEW_BAR}`}>
           {json.warnings.length > 0 ? (
             <ul className="mb-4 space-y-1 rounded-[var(--rounded-xs)] border border-[var(--status-failed)] px-4 py-3 text-sm text-[var(--status-failed)]">
               {json.warnings.map((warning) => (
@@ -536,7 +560,9 @@ export const PageReviewEditor = ({
                                       >
                                         <input
                                           aria-label={
-                                            row.header ? "Header cell" : "Cell"
+                                            row.header
+                                              ? `Header row ${rowIndex + 1}, column ${cellIndex + 1}`
+                                              : `Row ${rowIndex + 1}, column ${cellIndex + 1}`
                                           }
                                           className={`${FIELD} font-sans`}
                                           value={cell.text}

@@ -2,14 +2,13 @@ import { bookPages, books, ingestionJobs, units } from "@oku/db";
 import {
   ContentsOutlineSchema,
   PageExtractedJsonSchema,
-  applyContentsOutline,
   type ContentsEntry,
   type HeadingLevel,
   type PageExtractedJson,
 } from "@oku/shared-types";
 import { asc, desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { isAuthorized, unauthorized } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { bookStoragePrefix } from "@/lib/book-files";
 import { parseBookUpload } from "@/lib/book-upload";
 import type { BookUploadFields } from "@/lib/book-upload";
@@ -18,6 +17,7 @@ import {
   findOrCreateSubcategory,
   listCategories,
 } from "@/lib/catalog-db";
+import { applyOutlineToPages } from "@/lib/apply-outline";
 import { getDb } from "@/lib/db";
 import { deletePrefix } from "@/lib/storage";
 
@@ -29,8 +29,9 @@ export const GET = async (
   request: Request,
   context: RouteContext,
 ): Promise<NextResponse> => {
-  if (!(await isAuthorized(request))) {
-    return unauthorized();
+  const denied = await requireAdmin(request);
+  if (denied) {
+    return denied;
   }
 
   const { bookId } = await context.params;
@@ -119,8 +120,9 @@ export const PUT = async (
   request: Request,
   context: RouteContext,
 ): Promise<NextResponse> => {
-  if (!(await isAuthorized(request))) {
-    return unauthorized();
+  const denied = await requireAdmin(request);
+  if (denied) {
+    return denied;
   }
 
   const { bookId } = await context.params;
@@ -206,21 +208,7 @@ const writeOutlineOntoHeaders = async (
       parsed.push({ id: row.id, json: json.data });
     }
   }
-  const applied = applyContentsOutline(
-    parsed.map((page) => page.json),
-    entries,
-  );
-  for (let index = 0; index < parsed.length; index += 1) {
-    const before = parsed[index];
-    const after = applied.pages[index];
-    if (!before || !after || before.json === after) {
-      continue;
-    }
-    await db
-      .update(bookPages)
-      .set({ extractedJson: after, updatedAt: new Date() })
-      .where(eq(bookPages.id, before.id));
-  }
+  await applyOutlineToPages(parsed, entries);
 };
 
 /** Folder that holds a book's PDF, cover, and page images, from its stored PDF URL. */
@@ -242,8 +230,9 @@ export const DELETE = async (
   request: Request,
   context: RouteContext,
 ): Promise<NextResponse> => {
-  if (!(await isAuthorized(request))) {
-    return unauthorized();
+  const denied = await requireAdmin(request);
+  if (denied) {
+    return denied;
   }
 
   const { bookId } = await context.params;

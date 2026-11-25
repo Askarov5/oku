@@ -1,5 +1,3 @@
-import { z } from "zod";
-
 /** How a PDF page is extracted. Body is the default for lesson pages. */
 export const PAGE_ROLES = [
   "body",
@@ -11,8 +9,6 @@ export const PAGE_ROLES = [
 ] as const;
 
 export type PageRole = (typeof PAGE_ROLES)[number];
-
-export const PageRoleSchema = z.enum(PAGE_ROLES);
 
 /** Special roles an admin can assign on upload (everything except body). */
 export const SPECIAL_PAGE_ROLES = [
@@ -34,24 +30,8 @@ export interface PageRoleAssignments {
   answers: number[];
 }
 
-export const EMPTY_PAGE_ROLE_ASSIGNMENTS: PageRoleAssignments = {
-  cover: [],
-  tableOfContents: [],
-  glossary: [],
-  appendices: [],
-  answers: [],
-};
-
 /** Role for a front/back-matter unit header (not a lesson). */
 export type UnitKind = "body" | "cover" | "glossary" | "appendix" | "answers";
-
-export const UnitKindSchema = z.enum([
-  "body",
-  "cover",
-  "glossary",
-  "appendix",
-  "answers",
-]);
 
 /** Map a page role to a unit kind, or null for TOC pages (no unit). */
 export const unitKindForPageRole = (role: PageRole): UnitKind | null => {

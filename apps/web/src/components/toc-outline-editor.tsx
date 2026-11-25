@@ -27,9 +27,9 @@ interface TocOutlineEditorProps {
 
 const LEVEL_STEP = "0.75rem";
 const TITLE_INPUT =
-  "min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] coarse:min-h-[44px] coarse:text-base";
+  "min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] coarse:min-h-[44px] coarse:text-base";
 const PAGE_INPUT =
-  "w-12 shrink-0 border-0 bg-transparent p-0 text-right font-mono text-xs tabular-nums text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-secondary)] coarse:min-h-[44px] coarse:w-14 coarse:text-sm";
+  "w-12 shrink-0 border-0 bg-transparent p-0 text-right font-mono text-xs tabular-nums text-[var(--text-secondary)] placeholder:text-[var(--text-secondary)] coarse:min-h-[44px] coarse:w-14 coarse:text-sm";
 const ICON_HIT =
   "inline-flex size-11 shrink-0 items-center justify-center rounded-[var(--rounded-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:pointer-events-none disabled:opacity-30";
 

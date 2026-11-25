@@ -5,7 +5,7 @@ import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
 import { formatFileSize } from "@/lib/book-files";
 import type { OpenedPdf } from "@/lib/pdf-preview";
-import { openPdf, renderCover, renderPage } from "@/lib/pdf-preview";
+import { drawPageOnCanvas, openPdf, renderCover, renderPage } from "@/lib/pdf-preview";
 
 /** What the form learns from the chosen file. */
 export interface PdfPreviewResult {
@@ -106,9 +106,7 @@ export const PdfPreview = ({
         if (stale) {
           return;
         }
-        target.width = rendered.width;
-        target.height = rendered.height;
-        target.getContext("2d")?.drawImage(rendered, 0, 0);
+        drawPageOnCanvas(target, rendered);
         setDrawn(page);
       })
       .catch(() => {

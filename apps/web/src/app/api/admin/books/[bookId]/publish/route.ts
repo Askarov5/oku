@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAuthorized, unauthorized } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { publishBook } from "@/lib/publish";
 
 interface RouteContext {
@@ -10,8 +10,9 @@ export const POST = async (
   request: Request,
   context: RouteContext,
 ): Promise<NextResponse> => {
-  if (!(await isAuthorized(request))) {
-    return unauthorized();
+  const denied = await requireAdmin(request);
+  if (denied) {
+    return denied;
   }
 
   const { bookId } = await context.params;

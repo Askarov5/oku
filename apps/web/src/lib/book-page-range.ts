@@ -115,6 +115,12 @@ export const digitizePageSeeds = (
   };
 };
 
+/** Stored digitize end, or the last page when the book has no end recorded. */
+export const resolveDigitizeEnd = (
+  digitizePageEnd: number | null,
+  pageNumbers: readonly number[],
+): number => digitizePageEnd ?? Math.max(...pageNumbers, 1);
+
 /** How many pages a digitize-from/through pair would send to AI, or null when the inputs are incomplete or invalid. */
 export const queuedPageCount = (
   totalPages: number,

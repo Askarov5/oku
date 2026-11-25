@@ -1,6 +1,5 @@
-import { z } from "zod";
 import {
-  HeadingLevelSchema,
+  TocEntrySchema,
   headingLevel,
   inferHeadingLevel,
   type HeadingLevel,
@@ -8,21 +7,16 @@ import {
   type PageExtractedJson,
 } from "./block-ast.js";
 
-/** One line from the printed table of contents. */
+/** One line from the printed table of contents. Same shape as a page's tocEntries. */
 export interface ContentsEntry {
   title: string;
   level: HeadingLevel;
-  /** The page number printed at the end of the line. */
   printedPage: string;
 }
 
-export const ContentsEntrySchema = z.object({
-  title: z.string().trim().min(1),
-  level: HeadingLevelSchema,
-  printedPage: z.string().trim().min(1),
-});
+export const ContentsEntrySchema = TocEntrySchema;
 
-export const ContentsOutlineSchema = z.array(ContentsEntrySchema);
+export const ContentsOutlineSchema = TocEntrySchema.array();
 
 /** A saved manual outline, or null when the value is empty or not that shape. */
 export const readStoredContents = (value: unknown): ContentsEntry[] | null => {
@@ -37,134 +31,9 @@ export const readStoredContents = (value: unknown): ContentsEntry[] | null => {
   }));
 };
 
-export type ContentsRange =
-  | { start: number; end: number }
-  | null;
-
 export type ContentsParseResult =
   | { ok: true; entries: ContentsEntry[] }
   | { ok: false; reason: "unset" | "missing" | "empty" | "no_lines" };
-
-/** Both set or both null; start is not after end. */
-export const normalizeContentsRange = (
-  start: number | null | undefined,
-  end: number | null | undefined,
-): ContentsRange => {
-  if (start == null && end == null) {
-    return null;
-  }
-  if (
-    typeof start !== "number" ||
-    typeof end !== "number" ||
-    !Number.isInteger(start) ||
-    !Number.isInteger(end) ||
-    start < 1 ||
-    end < 1 ||
-    start > end
-  ) {
-    return null;
-  }
-  return { start, end };
-};
-
-/**
- * Optional contents fields from a form. Blank means unset; one field alone
- * or a bad range fails.
- */
-export const parseContentsRangeInput = (
-  startRaw: string,
-  endRaw: string,
-):
-  | { ok: true; range: ContentsRange }
-  | { ok: false; error: string } => {
-  const startText = startRaw.trim();
-  const endText = endRaw.trim();
-  if (!startText && !endText) {
-    return { ok: true, range: null };
-  }
-  if (!startText || !endText) {
-    return {
-      ok: false,
-      error: "Set both contents pages, or leave both blank",
-    };
-  }
-  const start = Number(startText);
-  const end = Number(endText);
-  if (
-    !Number.isInteger(start) ||
-    !Number.isInteger(end) ||
-    start < 1 ||
-    end < 1 ||
-    start > end
-  ) {
-    return { ok: false, error: "Contents pages must be a valid PDF page range" };
-  }
-  return { ok: true, range: { start, end } };
-};
-
-/**
- * A confirmed contents list posted with an upload. Blank means none.
- * A JSON array of title, level, and printed page; anything else fails.
- */
-export const parseContentsOutlineField = (
-  raw: string,
-):
-  | { ok: true; entries: ContentsEntry[] | null }
-  | { ok: false; error: string } => {
-  const text = raw.trim();
-  if (!text) {
-    return { ok: true, entries: null };
-  }
-  let json: unknown;
-  try {
-    json = JSON.parse(text) as unknown;
-  } catch {
-    return { ok: false, error: "Contents could not be read" };
-  }
-  const parsed = ContentsOutlineSchema.safeParse(json);
-  if (!parsed.success || parsed.data.length === 0) {
-    return {
-      ok: false,
-      error: "Each contents row needs a title, a level, and a page",
-    };
-  }
-  return {
-    ok: true,
-    entries: parsed.data.map((entry) => ({
-      title: entry.title,
-      printedPage: entry.printedPage,
-      level: entry.level as HeadingLevel,
-    })),
-  };
-};
-
-/** Whether every PDF page in the range exists among the book's pages. */
-export const contentsPagesExist = (
-  range: ContentsRange,
-  pageNumbers: Iterable<number>,
-): boolean => {
-  if (!range) {
-    return true;
-  }
-  const known = new Set(pageNumbers);
-  for (let page = range.start; page <= range.end; page += 1) {
-    if (!known.has(page)) {
-      return false;
-    }
-  }
-  return true;
-};
-
-/** Whether the range sits inside a PDF of this many pages. */
-export const contentsRangeInPdf = (
-  range: ContentsRange,
-  totalPages: number,
-): boolean => {
-  if (!range) {
-    return true;
-  }
-  return range.start >= 1 && range.end <= totalPages;
-};
 
 const TITLE_NUMBER =
   /^((?:§\s*\d+\.?|(?:[IVXLCІХ]+|\d+)\.)(?:\s*\d+\.)*)\s*(.*)$/i;
@@ -305,49 +174,8 @@ export const collectTocEntries = (
 };
 
 /**
- * Build the outline from the book's contents pages when they are digitized.
- * Otherwise leave the caller on today's heading levels.
- */
-export const parseContentsOutline = (
-  range: ContentsRange,
-  pages: Array<{ pageNumber: number; extractedJson: PageExtractedJson | null }>,
-): ContentsParseResult => {
-  if (!range) {
-    return { ok: false, reason: "unset" };
-  }
-
-  const byNumber = new Map(
-    pages.map((page) => [page.pageNumber, page] as const),
-  );
-  const slice: Array<{
-    pageNumber: number;
-    extractedJson: PageExtractedJson;
-  }> = [];
-  for (let pageNumber = range.start; pageNumber <= range.end; pageNumber += 1) {
-    const page = byNumber.get(pageNumber);
-    if (!page) {
-      return { ok: false, reason: "missing" };
-    }
-    if (!page.extractedJson) {
-      return { ok: false, reason: "empty" };
-    }
-    slice.push({
-      pageNumber: page.pageNumber,
-      extractedJson: page.extractedJson,
-    });
-  }
-
-  const entries = collectTocEntries(slice);
-  if (entries.length === 0) {
-    // Digitized, but nothing looks like a title + page line.
-    return { ok: false, reason: "no_lines" };
-  }
-  return { ok: true, entries };
-};
-
-/**
  * Build the outline from an explicit list of TOC page numbers (non-contiguous
- * allowed). Same missing/empty/no_lines reasons as the range form.
+ * allowed).
  */
 export const parseContentsOutlineFromPages = (
   pageNumbers: number[],
@@ -509,34 +337,6 @@ export const applyContentsOutline = (
       };
     });
     return { ...page, blocks };
-  });
-  return { pages: next, updatedHeaders };
-};
-
-/**
- * Write contents levels onto matching unit headers. A pinned reviewer level
- * is left alone. Returns how many headers changed and the updated pages.
- */
-export const applyContentsLevels = (
-  pages: PageExtractedJson[],
-  entries: ContentsEntry[],
-): { pages: PageExtractedJson[]; updatedHeaders: number } => {
-  let updatedHeaders = 0;
-  const next = pages.map((page) => {
-    let touched = false;
-    const blocks = page.blocks.map((block) => {
-      if (block.type !== "unit_header" || block.levelPinned) {
-        return block;
-      }
-      const entry = matchContentsEntry(block.title, entries);
-      if (!entry || block.level === entry.level) {
-        return block;
-      }
-      touched = true;
-      updatedHeaders += 1;
-      return { ...block, level: entry.level };
-    });
-    return touched ? { ...page, blocks } : page;
   });
   return { pages: next, updatedHeaders };
 };

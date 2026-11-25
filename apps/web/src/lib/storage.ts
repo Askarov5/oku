@@ -1,12 +1,11 @@
 import { mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
-import { getEnv } from "./env";
-import { publicObjectUrl, uploadObject as uploadR2Object } from "./r2";
+import { uploadObject as uploadR2Object } from "./r2";
 
 const localRoot = (): string =>
   path.resolve(process.cwd(), process.env.LOCAL_STORAGE_DIR ?? "../../.r2-local");
 
-export const isLocalStorage = (): boolean =>
+const isLocalStorage = (): boolean =>
   (process.env.STORAGE_DRIVER ?? "local") === "local";
 
 export const uploadObject = async (input: {
@@ -39,16 +38,4 @@ export const deletePrefix = async (prefix: string): Promise<void> => {
   }
   const fullPath = path.join(localRoot(), prefix);
   await rm(fullPath, { recursive: true, force: true });
-};
-
-export const mediaPublicUrl = (key: string): string => {
-  if (isLocalStorage()) {
-    return `/api/media/${key}`;
-  }
-  return publicObjectUrl(key);
-};
-
-export const storageMode = (): string => {
-  const env = getEnv();
-  return isLocalStorage() ? `local:${localRoot()}` : `r2:${env.r2.endpoint}`;
 };

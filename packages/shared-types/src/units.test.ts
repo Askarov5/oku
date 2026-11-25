@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PageBlock, PageExtractedJson } from "./block-ast.js";
 import type { PageRole } from "./page-roles.js";
-import { bodyUnits, buildUnits, matterUnits, unitIndexForPage } from "./units.js";
+import { bodyUnits, buildUnits, matterUnits } from "./units.js";
 
 const page = (
   pageNumber: number,
@@ -124,7 +124,6 @@ describe("buildUnits", () => {
     );
     expect(units[0]?.header.pageEnd).toBe(2);
     expect(units[1]?.header.pageStart).toBe(2);
-    expect(unitIndexForPage(units, 2)).toBe(0);
   });
 
   it("keeps an anchor for a page with no content", () => {
@@ -132,7 +131,6 @@ describe("buildUnits", () => {
       [page(1, [header("u1", "One"), text("a", "Text")]), page(2, [])],
       "Book",
     );
-    expect(unitIndexForPage(units, 2)).toBe(0);
     expect(units[0]?.header.pageEnd).toBe(2);
   });
 
