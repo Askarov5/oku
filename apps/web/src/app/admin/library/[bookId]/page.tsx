@@ -149,13 +149,15 @@ const BookDetailPage = (): ReactElement => {
               <div className="mt-2 flex items-start gap-4 coarse:mt-0">
                 <BookCover
                   url={data.book.coverImageUrl}
+                  width={72}
+                  height={96}
                   className="h-24 w-[72px]"
                   eager
                 />
                 <div className="min-w-0">
                   <h2
                     lang={data.book.language}
-                    className="text-2xl font-bold tracking-tight"
+                    className="break-words text-2xl font-bold tracking-tight"
                   >
                     {data.book.title}
                   </h2>
@@ -163,7 +165,7 @@ const BookDetailPage = (): ReactElement => {
                     {shelfLine(data.book)}
                   </p>
                   {data.book.authors.length > 0 ? (
-                    <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                    <p className="mt-1 break-words text-sm text-[var(--text-secondary)]">
                       {data.book.authors.join(", ")}
                     </p>
                   ) : null}
@@ -352,7 +354,7 @@ const BookDetailPage = (): ReactElement => {
                   return (
                     <li
                       key={page.id}
-                      className="relative flex flex-col gap-2 border-b border-r border-[var(--border-hairline)] bg-[var(--bg-surface)] p-3 transition-colors hover:bg-[var(--bg-hover)] active:bg-[var(--bg-hover)]"
+                      className="relative flex flex-col gap-2 border-b border-r border-[var(--border-hairline)] bg-[var(--bg-surface)] p-3 transition-colors [content-visibility:auto] [contain-intrinsic-block-size:auto_8rem] hover:bg-[var(--bg-hover)] active:bg-[var(--bg-hover)]"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <Link

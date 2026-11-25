@@ -221,7 +221,9 @@ export const LibraryRail = (): ReactElement => {
             aria-current={onBook ? "page" : undefined}
             className={rowClass(onBook)}
           >
-            <span lang={data.book.language}>{data.book.title}</span>
+            <span lang={data.book.language} className="min-w-0 break-words">
+              {data.book.title}
+            </span>
           </Link>
 
           {pageCount > 0 ? (
@@ -268,7 +270,7 @@ export const LibraryRail = (): ReactElement => {
                           >
                             <span
                               lang={data.book.language}
-                              className="min-w-0"
+                              className="min-w-0 break-words"
                               style={{
                                 marginLeft: `${(unit.header.level - 1) * 0.75}rem`,
                               }}
@@ -302,7 +304,7 @@ export const LibraryRail = (): ReactElement => {
                             marginLeft: `${(entry.level - 1) * 0.75}rem`,
                           }}
                         >
-                          <span className="min-w-0">{entry.title}</span>
+                          <span className="min-w-0 break-words">{entry.title}</span>
                           <span className="ml-auto shrink-0 font-mono text-xs tabular-nums text-[var(--text-on-rail-muted)]">
                             {entry.printedPage}
                           </span>
@@ -327,7 +329,7 @@ export const LibraryRail = (): ReactElement => {
                         aria-current={active ? "page" : undefined}
                         className={`${rowClass(active)} items-baseline`}
                       >
-                        <span lang={data.book.language} className="min-w-0">
+                        <span lang={data.book.language} className="min-w-0 break-words">
                           {unit.header.title}
                         </span>
                         <span

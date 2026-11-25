@@ -158,6 +158,8 @@ const LibraryBookRow = ({
   >
     <BookCover
       url={book.coverImageUrl}
+      width={48}
+      height={72}
       className="col-start-1 row-start-1 row-span-2 h-[4.5rem] w-12 self-start sm:row-span-1 sm:self-center"
     />
     <div className="col-start-2 row-start-1 min-w-0">

@@ -45,6 +45,22 @@ export const AdminDialog = ({
     setMounted(true);
   }, []);
 
+  useEffect(() => {
+    if (!mounted) {
+      return undefined;
+    }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape" || busy) {
+        return;
+      }
+      event.preventDefault();
+      // Let this keyup finish before a confirm dialog opens, or Escape cancels it.
+      window.setTimeout(onClose, 0);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mounted, busy, onClose]);
+
   if (!mounted) {
     return null;
   }

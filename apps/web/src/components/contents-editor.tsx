@@ -5,7 +5,7 @@ import type { ContentsEntry, HeadingLevel } from "@oku/shared-types";
 import { Button, Notice, RefreshIcon } from "@oku/ui";
 import type { NoticeState } from "@oku/ui";
 import type { ReactElement } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AdminDialog } from "@/components/admin-dialog";
 import {
   TocOutlineEditor,
@@ -46,6 +46,13 @@ const seedRows = (book: LibraryBook, outline: BookOutline): TocDraftRow[] => {
   return rowsFromEntries(source);
 };
 
+const outlineSignature = (rows: TocDraftRow[]): string =>
+  rows
+    .map((row) => `${row.level}\t${row.title}\t${row.printedPage}`)
+    .join("\n");
+
+const DISCARD_WARNING = "Close without saving? Unsaved edits will be lost.";
+
 /**
  * Edits the book's table of contents: indented list with level controls,
  * and a refresh that re-reads digitized TOC pages.
@@ -60,12 +67,15 @@ export const ContentsEditor = ({
   const [rows, setRows] = useState<TocDraftRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<NoticeState | null>(null);
+  const rowsBaseline = useRef("");
 
   useEffect(() => {
     if (!open) {
       return;
     }
-    setRows(seedRows(book, outline));
+    const seeded = seedRows(book, outline);
+    setRows(seeded);
+    rowsBaseline.current = outlineSignature(seeded);
     setMessage(null);
     // Seed only when the dialog opens; keep local edits while it stays open.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
@@ -139,14 +149,14 @@ export const ContentsEditor = ({
       return;
     }
     if (json.entries) {
-      setRows(
-        json.entries.map((entry) => ({
-          key: nextTocKey(),
-          title: entry.title,
-          level: entry.level,
-          printedPage: entry.printedPage,
-        })),
-      );
+      const next = json.entries.map((entry) => ({
+        key: nextTocKey(),
+        title: entry.title,
+        level: entry.level,
+        printedPage: entry.printedPage,
+      }));
+      setRows(next);
+      rowsBaseline.current = outlineSignature(next);
     }
     setMessage({
       text: `Updated ${json.updatedHeaders ?? 0} header ${
@@ -157,13 +167,26 @@ export const ContentsEditor = ({
     await onSaved();
   };
 
+  const requestClose = (): void => {
+    if (busy) {
+      return;
+    }
+    if (
+      outlineSignature(rows) !== rowsBaseline.current &&
+      !window.confirm(DISCARD_WARNING)
+    ) {
+      return;
+    }
+    onClose();
+  };
+
   return (
     <AdminDialog
       titleId="contents-editor-title"
       title="Contents"
       description="Left/right change heading level. This list drives the sidebar and body extraction hints."
       maxWidth="lg"
-      onClose={onClose}
+      onClose={requestClose}
       titleAction={
         <Button
           type="button"
@@ -186,7 +209,7 @@ export const ContentsEditor = ({
             type="button"
             variant="ghost"
             disabled={busy}
-            onClick={onClose}
+            onClick={requestClose}
           >
             Cancel
           </Button>
@@ -195,7 +218,16 @@ export const ContentsEditor = ({
             variant="ghost"
             className="ml-auto"
             disabled={busy || book.contentsOutline === null}
-            onClick={() => void save(true)}
+            onClick={() => {
+              if (
+                !window.confirm(
+                  "Clear the saved outline? The contents list falls back to the headings in the book.",
+                )
+              ) {
+                return;
+              }
+              void save(true);
+            }}
           >
             Clear saved outline
           </Button>

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Button,
   Card,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -55,7 +56,7 @@ const UnitRoute = (): ReactElement => {
   const params = useParams<{ bookId: string; unitNumber: string }>();
   const bookId = params.bookId;
   const index = Number(params.unitNumber) - 1;
-  const { data, failed } = useBookDetail(bookId);
+  const { data, failed, refresh } = useBookDetail(bookId);
   const outline = useBookOutline(data);
   const unit = outline?.units[index] ?? null;
   const ready = unit !== null;
@@ -84,7 +85,12 @@ const UnitRoute = (): ReactElement => {
     <AdminGate>
       {!data || !outline ? (
         failed ? (
-          <Notice tone="error">Failed to load book</Notice>
+          <div className="flex flex-col items-start gap-3">
+            <Notice tone="error">Failed to load book</Notice>
+            <Button variant="ghost" onClick={() => void refresh()}>
+              Try again
+            </Button>
+          </div>
         ) : (
           <p className="text-[var(--text-secondary)]">Loading unit…</p>
         )

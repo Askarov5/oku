@@ -15,7 +15,7 @@ import type {
 import { Button, Notice, fieldClass } from "@oku/ui";
 import type { NoticeState } from "@oku/ui";
 import type { ReactElement } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AdminDialog } from "@/components/admin-dialog";
 import { RichText } from "@/components/rich-text";
 import {
@@ -69,6 +69,72 @@ const markdownFromPage = (json: PageExtractedJson | null): string => {
     .join("\n\n");
 };
 
+const TEXT_ROLES = ["cover", "glossary", "appendix", "answers"] as const;
+
+interface TextDrafts {
+  cover: string;
+  glossary: string;
+  appendix: string;
+  answers: string;
+}
+
+const EMPTY_DRAFTS: TextDrafts = {
+  cover: "",
+  glossary: "",
+  appendix: "",
+  answers: "",
+};
+
+const DISCARD_WARNING = "Close without saving? Unsaved edits will be lost.";
+
+const outlineSignature = (rows: TocDraftRow[]): string =>
+  rows
+    .map((row) => `${row.level}\t${row.title}\t${row.printedPage}`)
+    .join("\n");
+
+/** The textarea is the page's prose. Images and tables stay where they are. */
+const applyTextDraft = (
+  json: PageExtractedJson | null,
+  pageNumber: number,
+  draft: string,
+): PageExtractedJson => {
+  const base: PageExtractedJson = json ?? {
+    pageNumber,
+    printedPage: null,
+    continuesFromPrevious: false,
+    blocks: [],
+    warnings: [],
+    model: "manual",
+    extractedAt: new Date().toISOString(),
+  };
+  const blocks: PageExtractedJson["blocks"] = [];
+  let placed = false;
+  for (const block of base.blocks) {
+    if (block.type === "markdown" || block.type === "unit_header") {
+      if (!placed) {
+        placed = true;
+        if (draft.trim()) {
+          blocks.push({
+            id: block.type === "markdown" ? block.id : crypto.randomUUID(),
+            type: "markdown",
+            markdown: draft,
+          });
+        }
+      }
+      continue;
+    }
+    blocks.push(block);
+  }
+  if (!placed && draft.trim()) {
+    blocks.unshift({
+      id: crypto.randomUUID(),
+      type: "markdown",
+      markdown: draft,
+    });
+  }
+  return { ...base, pageNumber, blocks };
+};
+
 /**
  * Review gate after Phase 1: edit TOC levels, inspect special pages, then
  * approve and convert body pages.
@@ -88,6 +154,8 @@ export const SpecialPagesReviewModal = ({
   const [glossaryDraft, setGlossaryDraft] = useState("");
   const [appendixDraft, setAppendixDraft] = useState("");
   const [answersDraft, setAnswersDraft] = useState("");
+  const textBaseline = useRef<TextDrafts>({ ...EMPTY_DRAFTS });
+  const rowsBaseline = useRef("");
 
   const specialPages = useMemo(
     () =>
@@ -150,18 +218,22 @@ export const SpecialPagesReviewModal = ({
           extractedJson: extractedFor(page.pageNumber),
         })),
     );
-    setRows(rowsFromEntries(stored.length > 0 ? stored : fromPages));
+    const nextRows = rowsFromEntries(stored.length > 0 ? stored : fromPages);
+    setRows(nextRows);
+    rowsBaseline.current = outlineSignature(nextRows);
     setTab(tabs[0] ?? "table_of_contents");
     setMessage(null);
 
-    const setDraftFor = (role: SpecialTab, setter: (value: string) => void) => {
+    const seeded: TextDrafts = { ...EMPTY_DRAFTS };
+    for (const role of TEXT_ROLES) {
       const page = specialPages.find((item) => item.pageRole === role);
-      setter(page ? markdownFromPage(extractedFor(page.pageNumber)) : "");
-    };
-    setDraftFor("cover", setCoverDraft);
-    setDraftFor("glossary", setGlossaryDraft);
-    setDraftFor("appendix", setAppendixDraft);
-    setDraftFor("answers", setAnswersDraft);
+      seeded[role] = page ? markdownFromPage(extractedFor(page.pageNumber)) : "";
+    }
+    textBaseline.current = seeded;
+    setCoverDraft(seeded.cover);
+    setGlossaryDraft(seeded.glossary);
+    setAppendixDraft(seeded.appendix);
+    setAnswersDraft(seeded.answers);
     // Seed when the dialog opens; keep local edits while it stays open.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
   }, [open]);
@@ -169,6 +241,50 @@ export const SpecialPagesReviewModal = ({
   if (!open) {
     return null;
   }
+
+  const textDrafts = (): TextDrafts => ({
+    cover: coverDraft,
+    glossary: glossaryDraft,
+    appendix: appendixDraft,
+    answers: answersDraft,
+  });
+
+  const saveTextDrafts = async (): Promise<boolean> => {
+    const current = textDrafts();
+    for (const role of TEXT_ROLES) {
+      if (current[role] === textBaseline.current[role]) {
+        continue;
+      }
+      const page = specialPages.find((item) => item.pageRole === role);
+      if (!page) {
+        continue;
+      }
+      const response = await fetch(
+        `/api/admin/books/${book.id}/pages/${page.pageNumber}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            extractedJson: applyTextDraft(
+              extractedFor(page.pageNumber),
+              page.pageNumber,
+              current[role],
+            ),
+            markReviewed: page.status === "reviewed",
+          }),
+        },
+      );
+      if (!response.ok) {
+        setMessage({
+          text: await readError(response, "Could not save the page text"),
+          tone: "error",
+        });
+        return false;
+      }
+      textBaseline.current = { ...textBaseline.current, [role]: current[role] };
+    }
+    return true;
+  };
 
   const saveOutline = async (): Promise<ContentsEntry[] | null> => {
     if (rows.length === 0) {
@@ -200,11 +316,17 @@ export const SpecialPagesReviewModal = ({
   const saveDraft = async (): Promise<void> => {
     setBusy(true);
     setMessage(null);
+    const textSaved = await saveTextDrafts();
+    if (!textSaved) {
+      setBusy(false);
+      return;
+    }
     const saved = await saveOutline();
     setBusy(false);
     if (!saved && rows.length > 0) {
       return;
     }
+    rowsBaseline.current = outlineSignature(rows);
     setMessage({ text: "Draft saved", tone: "info" });
     await onSaved();
   };
@@ -212,6 +334,11 @@ export const SpecialPagesReviewModal = ({
   const convertBody = async (): Promise<void> => {
     setBusy(true);
     setMessage(null);
+    const textSaved = await saveTextDrafts();
+    if (!textSaved) {
+      setBusy(false);
+      return;
+    }
     let outline: ContentsEntry[] | null = null;
     if (rows.length > 0) {
       const parsed = entriesFromRows(rows);
@@ -246,6 +373,13 @@ export const SpecialPagesReviewModal = ({
     if (!coverMeta) {
       return;
     }
+    if (
+      !window.confirm(
+        "Replace the book’s title, authors, and year with the ones read from the cover?",
+      )
+    ) {
+      return;
+    }
     setBusy(true);
     setMessage(null);
     const response = await fetch(`/api/admin/books/${book.id}`, {
@@ -276,6 +410,21 @@ export const SpecialPagesReviewModal = ({
     }
     setMessage({ text: "Cover metadata synced to the book", tone: "info" });
     await onSaved();
+  };
+
+  const requestClose = (): void => {
+    if (busy) {
+      return;
+    }
+    const current = textDrafts();
+    const textDirty = TEXT_ROLES.some(
+      (role) => current[role] !== textBaseline.current[role],
+    );
+    const listDirty = outlineSignature(rows) !== rowsBaseline.current;
+    if ((textDirty || listDirty) && !window.confirm(DISCARD_WARNING)) {
+      return;
+    }
+    onClose();
   };
 
   const draftForTab =
@@ -312,7 +461,7 @@ export const SpecialPagesReviewModal = ({
       }
       maxWidth="5xl"
       busy={busy}
-      onClose={onClose}
+      onClose={requestClose}
       headerExtra={
         tabs.length > 0 ? (
             <div
@@ -363,7 +512,7 @@ export const SpecialPagesReviewModal = ({
             variant="ghost"
             className="ml-auto"
             disabled={busy}
-            onClick={onClose}
+            onClick={requestClose}
           >
             Close
           </Button>

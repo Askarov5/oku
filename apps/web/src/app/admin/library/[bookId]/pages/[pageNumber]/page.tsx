@@ -224,7 +224,11 @@ const PageReviewRoute = (): ReactElement => {
         </Notice>
       ) : null}
       {!page ? (
-        error ? null : (
+        error ? (
+          <Button variant="ghost" className="mt-3" onClick={() => void load()}>
+            Try again
+          </Button>
+        ) : (
           <p className="text-[var(--text-secondary)]">Loading page…</p>
         )
       ) : stored && book ? (
