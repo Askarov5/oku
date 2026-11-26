@@ -362,7 +362,12 @@ def _normalize_table(raw: dict[str, Any]) -> tuple[dict[str, Any] | None, str | 
     if not rows:
         return None, "dropped_block: table had no rows"
     return (
-        {"type": "table", "caption": _text(raw.get("caption")) or None, "rows": rows},
+        {
+            "type": "table",
+            "idInBook": _text(raw.get("idInBook")) or None,
+            "caption": _text(raw.get("caption")) or None,
+            "rows": rows,
+        },
         None,
     )
 
@@ -557,6 +562,7 @@ def extract_page(
     book_title: str = "Textbook",
     grade: int | None = None,
     toc_hint: str = "",
+    instruction: str = "",
 ) -> LlmPageResponse:
     model = model or settings.llm_model
     if uses_mock(model):
@@ -580,6 +586,7 @@ def extract_page(
         language=language,
         grade=grade,
         toc_hint=toc_hint,
+        instruction=instruction,
     )
 
     for attempt in range(1, settings.llm_max_attempts + 1):

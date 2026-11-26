@@ -32,6 +32,7 @@ interface PageReviewEditorProps {
   retrying: boolean;
   /** What the re-read is doing right now, shown in place of the editor's own notice. */
   activity: string | null;
+  /** Opens the retry dialog (model + optional note). */
   onRetry: () => void;
   onSaved: () => void;
 }
@@ -69,6 +70,7 @@ const isEmpty = (block: PageBlock): boolean => {
       return block.title.trim() === "";
     case "table":
       return (
+        (block.idInBook ?? "").trim() === "" &&
         (block.caption ?? "").trim() === "" &&
         block.rows.every((row) => row.cells.every((cell) => cell.text.trim() === ""))
       );
@@ -534,20 +536,36 @@ export const PageReviewEditor = ({
 
                       {block.type === "table" ? (
                         <div className="space-y-3">
-                          <label className="block text-sm">
-                            Caption
-                            <input
-                              className={`${FIELD} mt-1`}
-                              value={block.caption ?? ""}
-                              placeholder="none"
-                              onChange={(event) =>
-                                updateTable(block.id, (table) => ({
-                                  ...table,
-                                  caption: event.target.value.trim() || null,
-                                }))
-                              }
-                            />
-                          </label>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <label className="block text-sm">
+                              Id in book
+                              <input
+                                className={`${FIELD} mt-1`}
+                                value={block.idInBook ?? ""}
+                                placeholder="6-таблица"
+                                onChange={(event) =>
+                                  updateTable(block.id, (table) => ({
+                                    ...table,
+                                    idInBook: event.target.value.trim() || null,
+                                  }))
+                                }
+                              />
+                            </label>
+                            <label className="block text-sm">
+                              Caption
+                              <input
+                                className={`${FIELD} mt-1`}
+                                value={block.caption ?? ""}
+                                placeholder="none"
+                                onChange={(event) =>
+                                  updateTable(block.id, (table) => ({
+                                    ...table,
+                                    caption: event.target.value.trim() || null,
+                                  }))
+                                }
+                              />
+                            </label>
+                          </div>
                           <div className="overflow-x-auto">
                             <table className="w-full border-collapse text-sm">
                               <tbody>
@@ -595,7 +613,11 @@ export const PageReviewEditor = ({
                               </tbody>
                             </table>
                           </div>
-                          <TableView caption={block.caption} rows={block.rows} />
+                          <TableView
+                            idInBook={block.idInBook}
+                            caption={block.caption}
+                            rows={block.rows}
+                          />
                         </div>
                       ) : null}
 
@@ -736,6 +758,7 @@ export const PageReviewEditor = ({
                   addBlock({
                     id: crypto.randomUUID(),
                     type: "table",
+                    idInBook: null,
                     caption: null,
                     rows: [
                       {

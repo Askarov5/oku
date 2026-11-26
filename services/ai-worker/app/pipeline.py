@@ -163,7 +163,11 @@ class IngestionPipeline:
                 )
                 return True
             # Read once per job: every page of a job is extracted by the same model.
-            model = resolve_model(dbmod.get_setting(conn, EXTRACTION_MODEL_SETTING))
+            # A per-job model (retry dialog) overrides the global extraction setting.
+            model = resolve_model(
+                job.get("model")
+                or dbmod.get_setting(conn, EXTRACTION_MODEL_SETTING)
+            )
             page_numbers = dbmod.job_page_numbers(job)
             # TOC hint for body pages: prefer the saved outline, else digitized TOC.
             all_pages = dbmod.list_pages(conn, book["id"])
@@ -211,6 +215,7 @@ class IngestionPipeline:
                             model=model,
                             page_role=page.get("page_role") or "body",
                             toc_hint=toc_hint,
+                            instruction=str(job.get("instruction") or ""),
                         )
                         dbmod.bump_job_progress(
                             page_conn, job_id=job["id"], completed_delta=1
@@ -256,6 +261,7 @@ class IngestionPipeline:
         model: str | None = None,
         page_role: str = "body",
         toc_hint: str = "",
+        instruction: str = "",
     ) -> None:
         dbmod.mark_page(
             conn,
@@ -291,6 +297,7 @@ class IngestionPipeline:
             book_title=str(book.get("title") or "Textbook"),
             grade=grade_n,
             toc_hint=toc_hint if page_role == "body" else "",
+            instruction=instruction,
         )
 
         layout_boxes = []

@@ -5,6 +5,7 @@ import type { ReactElement } from "react";
 import { MarkdownView } from "@/components/markdown-view";
 
 interface TableViewProps {
+  idInBook?: string | null;
   caption: string | null;
   rows: TableRow[];
 }
@@ -12,16 +13,33 @@ interface TableViewProps {
 const cellText = (text: string): ReactElement | string =>
   text.trim() === "" ? "" : <MarkdownView markdown={text} compact />;
 
+const figCaption = (
+  idInBook: string | null | undefined,
+  caption: string | null,
+): string | null => {
+  const label = (idInBook ?? "").trim();
+  const title = (caption ?? "").trim();
+  if (label && title) {
+    return `${label}. ${title}`;
+  }
+  return label || title || null;
+};
+
 /** A textbook grid, including cells that span columns or rows. */
-export const TableView = ({ caption, rows }: TableViewProps): ReactElement => {
+export const TableView = ({
+  idInBook,
+  caption,
+  rows,
+}: TableViewProps): ReactElement => {
   const bodyStart = rows.findIndex((row) => !row.header);
   const head = bodyStart === -1 ? rows : rows.slice(0, bodyStart);
   const body = bodyStart === -1 ? [] : rows.slice(bodyStart);
+  const label = figCaption(idInBook, caption);
 
   return (
     <figure className="my-6">
-      {caption ? (
-        <figcaption className="mb-2 text-sm font-semibold">{caption}</figcaption>
+      {label ? (
+        <figcaption className="mb-2 text-sm font-semibold">{label}</figcaption>
       ) : null}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">

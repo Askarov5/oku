@@ -101,6 +101,10 @@
       "properties": {
         "id": { "$ref": "#/$defs/blockId" },
         "type": { "const": "table" },
+        "idInBook": {
+          "description": "Printed table number/label in the book (e.g. \"6-таблица\"), not the block id.",
+          "type": ["string", "null"]
+        },
         "caption": { "type": ["string", "null"] },
         "rows": {
           "type": "array",

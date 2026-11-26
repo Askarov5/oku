@@ -32,6 +32,11 @@ export const TableRowSchema = z.object({
 export const TableBlockSchema = z.object({
   id: z.string().min(1),
   type: z.literal("table"),
+  /**
+   * The table's number/label in the book, when printed (e.g. "6-таблица",
+   * "Таблица 6"). Not the internal block id.
+   */
+  idInBook: z.string().nullish(),
   caption: z.string().nullable(),
   rows: z.array(TableRowSchema),
 });
@@ -220,6 +225,7 @@ export const collectBlockText = (blocks: PageBlock[]): string =>
           return `${block.alt} ${block.ai_description} ${block.caption ?? ""}`;
         case "table":
           return [
+            block.idInBook ?? "",
             block.caption ?? "",
             ...block.rows.flatMap((row) => row.cells.map((cell) => cell.text)),
           ].join(" ");

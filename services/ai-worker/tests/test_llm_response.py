@@ -218,7 +218,8 @@ def test_a_merged_header_is_kept_as_a_table() -> None:
             blocks=[
                 {
                     "type": "table",
-                    "caption": "1-таблица. Калк",
+                    "idInBook": "1-таблица",
+                    "caption": "Калк",
                     "rows": [
                         {
                             "header": True,
@@ -246,7 +247,8 @@ def test_a_merged_header_is_kept_as_a_table() -> None:
     )
     table = page.blocks[0]
     assert table.type == "table"
-    assert table.caption == "1-таблица. Калк"
+    assert table.idInBook == "1-таблица"
+    assert table.caption == "Калк"
     assert table.rows[0].cells[0].rowspan == 2
     assert table.rows[0].cells[1].colspan == 2
     assert table.rows[1].cells[0].text == "шаар калкы"

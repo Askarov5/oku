@@ -19,6 +19,7 @@ import {
   isTimeout,
   readJson,
 } from "@/lib/admin-request";
+import { AdminDialog } from "@/components/admin-dialog";
 import { AdminGate } from "@/components/admin-gate";
 import { BookCover } from "@/components/book-cover";
 import { BookForm, EMPTY_BOOK_FORM, bookFormInitial } from "@/components/book-form";
@@ -44,6 +45,7 @@ interface LibraryShelfProps {
 }
 
 const editButtonId = (bookId: string): string => `edit-${bookId}`;
+const deleteButtonId = (bookId: string): string => `delete-${bookId}`;
 
 interface BookMark {
   letter: "P" | "R" | "D";
@@ -205,6 +207,7 @@ const LibraryBookRow = ({
       <Button
         variant="ghost"
         size="icon"
+        id={deleteButtonId(book.id)}
         aria-label={deleting ? `Deleting ${book.title}` : `Delete ${book.title}`}
         title={deleting ? "Deleting…" : "Delete"}
         disabled={actionsLocked}
@@ -221,6 +224,57 @@ const loadErrorText = (error: LoadError): string => {
   if (error === "unauthorized") return SESSION_MESSAGE;
   return "The library could not be loaded. Refresh to try again.";
 };
+
+interface DeleteBookDialogProps {
+  book: LibraryBook;
+  deleting: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+const DeleteBookDialog = ({
+  book,
+  deleting,
+  error,
+  onCancel,
+  onConfirm,
+}: DeleteBookDialogProps): ReactElement => (
+  <AdminDialog
+    titleId="delete-book-title"
+    title="Delete book"
+    maxWidth="lg"
+    busy={deleting}
+    onClose={onCancel}
+    footer={
+      <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-hairline)] px-4 py-3">
+        <Button type="button" disabled={deleting} onClick={onConfirm}>
+          {deleting ? "Deleting…" : "Delete book"}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={deleting}
+          autoFocus
+          onClick={onCancel}
+        >
+          Cancel
+        </Button>
+      </div>
+    }
+  >
+    <div className="px-4 py-4">
+      <p className="text-sm leading-6">
+        Delete “{book.title}”? This removes the book, its pages, and the original PDF.
+      </p>
+      {error ? (
+        <Notice tone="error" className="mt-3">
+          {error}
+        </Notice>
+      ) : null}
+    </div>
+  </AdminDialog>
+);
 
 const LibraryLoadError = ({ error }: { error: LoadError }): ReactElement => (
   <div className="mt-4">
@@ -239,6 +293,8 @@ const LibraryShelf = ({ catalog, model }: LibraryShelfProps): ReactElement => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<LibraryBook | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [message, setMessage] = useState<NoticeState | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -247,6 +303,7 @@ const LibraryShelf = ({ catalog, model }: LibraryShelfProps): ReactElement => {
   const loadSeq = useRef(0);
   const mounted = useRef(true);
   const focusAfter = useRef<string | null>(null);
+  const deleteLock = useRef(false);
 
   const loadBooks = useCallback(async (): Promise<boolean> => {
     const seq = ++loadSeq.current;
@@ -479,58 +536,69 @@ const LibraryShelf = ({ catalog, model }: LibraryShelfProps): ReactElement => {
     void uploadBook(draft);
   };
 
+  const requestDelete = (book: LibraryBook): void => {
+    setDeleteError(null);
+    setPendingDelete(book);
+  };
+
+  const cancelDelete = (): void => {
+    if (deletingId) return;
+    if (pendingDelete) focusAfter.current = deleteButtonId(pendingDelete.id);
+    setDeleteError(null);
+    setPendingDelete(null);
+  };
+
   const deleteBook = async (book: LibraryBook): Promise<void> => {
-    if (
-      !window.confirm(
-        `Delete “${book.title}”? This removes the book, its pages, and the original PDF.`,
-      )
-    ) {
-      return;
-    }
+    if (deleteLock.current) return;
+    deleteLock.current = true;
     setDeletingId(book.id);
+    setDeleteError(null);
     setMessage(null);
     setSaved(null);
-    let response: Response;
     try {
-      response = await fetch(`/api/admin/books/${book.id}`, {
-        method: "DELETE",
-        signal: AbortSignal.timeout(20_000),
-      });
-    } catch (caught) {
+      let response: Response;
+      try {
+        response = await fetch(`/api/admin/books/${book.id}`, {
+          method: "DELETE",
+          signal: AbortSignal.timeout(20_000),
+        });
+      } catch (caught) {
+        setDeletingId(null);
+        setDeleteError(
+          isTimeout(caught)
+            ? "Deleting took too long. Try again."
+            : NETWORK_MESSAGE,
+        );
+        return;
+      }
+      const data = (await readJson<{
+        error?: string;
+        title?: string;
+      }>(response)) ?? {};
       setDeletingId(null);
+      if (!response.ok) {
+        setDeleteError(
+          data.error ?? failureText(response.status, "Could not delete the book"),
+        );
+        return;
+      }
+      const index = shown.findIndex((item) => item.id === book.id);
+      const neighbor = shown[index + 1] ?? shown[index - 1] ?? null;
+      focusAfter.current = neighbor ? editButtonId(neighbor.id) : "library-heading";
+      setBooks((current) => current.filter((item) => item.id !== book.id));
+      if (editingId === book.id) {
+        setEditingId(null);
+      }
+      forgetBookDetail(book.id);
+      setPendingDelete(null);
       setMessage({
-        text: isTimeout(caught)
-          ? "Deleting took too long. Try again."
-          : NETWORK_MESSAGE,
-        tone: "error",
+        text: `Deleted ${data.title ?? book.title}`,
+        tone: "info",
       });
-      return;
+      await loadBooks();
+    } finally {
+      deleteLock.current = false;
     }
-    const data = (await readJson<{
-      error?: string;
-      title?: string;
-    }>(response)) ?? {};
-    setDeletingId(null);
-    if (!response.ok) {
-      setMessage({
-        text: data.error ?? failureText(response.status, "Could not delete the book"),
-        tone: "error",
-      });
-      return;
-    }
-    const index = shown.findIndex((item) => item.id === book.id);
-    const neighbor = shown[index + 1] ?? shown[index - 1] ?? null;
-    focusAfter.current = neighbor ? editButtonId(neighbor.id) : "library-heading";
-    setBooks((current) => current.filter((item) => item.id !== book.id));
-    if (editingId === book.id) {
-      setEditingId(null);
-    }
-    forgetBookDetail(book.id);
-    setMessage({
-      text: `Deleted ${data.title ?? book.title}`,
-      tone: "info",
-    });
-    await loadBooks();
   };
 
   return (
@@ -611,7 +679,7 @@ const LibraryShelf = ({ catalog, model }: LibraryShelfProps): ReactElement => {
                       actionsLocked={busy || deletingId !== null}
                       deleting={deletingId === book.id}
                       onEdit={() => openEdit(book.id)}
-                      onDelete={() => void deleteBook(book)}
+                      onDelete={() => requestDelete(book)}
                     />
                   ))}
                 </ul>
@@ -634,6 +702,15 @@ const LibraryShelf = ({ catalog, model }: LibraryShelfProps): ReactElement => {
           />
           <ExtractionModelCard initial={model} />
         </div>
+      {pendingDelete ? (
+        <DeleteBookDialog
+          book={pendingDelete}
+          deleting={deletingId === pendingDelete.id}
+          error={deleteError}
+          onCancel={cancelDelete}
+          onConfirm={() => void deleteBook(pendingDelete)}
+        />
+      ) : null}
     </div>
   );
 };

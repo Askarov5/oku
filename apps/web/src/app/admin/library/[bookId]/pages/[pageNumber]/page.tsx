@@ -7,7 +7,6 @@ import {
   ChevronLeftIcon,
   Notice,
   StatusPill,
-  buttonClasses,
 } from "@oku/ui";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -16,6 +15,10 @@ import { useCallback, useEffect, useState } from "react";
 import { AdminGate } from "@/components/admin-gate";
 import { PageReviewEditor } from "@/components/page-review-editor";
 import { PagerLink } from "@/components/pager-link";
+import {
+  RetryPageDialog,
+  type RetryPageChoice,
+} from "@/components/retry-page-dialog";
 import { SourcePdfPage } from "@/components/source-pdf-page";
 import { failureText, readJson } from "@/lib/admin-request";
 import { readPageJson, readingHref, useBookOutline } from "@/lib/book-outline";
@@ -55,6 +58,7 @@ const PageReviewRoute = (): ReactElement => {
   // The stage reported while waiting, newer than the one on `loaded`.
   const [stage, setStage] = useState<string | null>(null);
   const [digitizing, setDigitizing] = useState(false);
+  const [retryOpen, setRetryOpen] = useState(false);
 
   const load = useCallback(async (): Promise<void> => {
     const response = await fetch(
@@ -72,12 +76,14 @@ const PageReviewRoute = (): ReactElement => {
   useEffect(() => {
     setStage(null);
     setDigitizing(false);
+    setRetryOpen(false);
     void load();
   }, [load]);
 
   // While moving between pages, the previous page must not show under the new heading.
   const page = loaded && loaded.pageNumber === pageNumber ? loaded : null;
-  const retrying = page?.status === "pending";
+  const pending = page?.status === "pending";
+  const retrying = digitizing || pending;
   const stored = page?.status === "stored";
 
   // A page left pending (just queued here, or already waiting) is followed until it settles.
@@ -123,16 +129,16 @@ const PageReviewRoute = (): ReactElement => {
     };
   }, [page, bookId, pageNumber, refreshBook]);
 
-  const digitize = async (): Promise<void> => {
-    if (!page || page.status === "pending") {
+  const openRetry = (): void => {
+    if (!page || page.status === "pending" || digitizing) {
       return;
     }
-    if (
-      page.status === "reviewed" &&
-      !window.confirm(
-        "This page is marked reviewed. Reading it again replaces that text.",
-      )
-    ) {
+    setError(null);
+    setRetryOpen(true);
+  };
+
+  const digitize = async (choice: RetryPageChoice): Promise<void> => {
+    if (!page || page.status === "pending" || digitizing) {
       return;
     }
     setError(null);
@@ -142,7 +148,11 @@ const PageReviewRoute = (): ReactElement => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ force: page.status === "reviewed" }),
+        body: JSON.stringify({
+          force: page.status === "reviewed",
+          model: choice.model,
+          ...(choice.instruction ? { instruction: choice.instruction } : {}),
+        }),
       },
     );
     const data = await readJson<{
@@ -159,6 +169,7 @@ const PageReviewRoute = (): ReactElement => {
       );
       return;
     }
+    setRetryOpen(false);
     setStage(data.page.stage);
     setLoaded(data.page);
     setDigitizing(false);
@@ -242,10 +253,7 @@ const PageReviewRoute = (): ReactElement => {
               Saved from the original PDF. Digitize when you want AI to read it.
             </p>
             <div className="ml-auto">
-              <Button
-                disabled={digitizing}
-                onClick={() => void digitize()}
-              >
+              <Button disabled={digitizing} onClick={openRetry}>
                 {digitizing ? "Queuing…" : "Digitize"}
               </Button>
             </div>
@@ -281,14 +289,31 @@ const PageReviewRoute = (): ReactElement => {
           previousHref={pageHref(previousPage)}
           nextHref={pageHref(nextPage)}
           retrying={retrying}
-          activity={retrying ? readingNote(stage ?? page.stage) : null}
-          onRetry={() => void digitize()}
+          activity={
+            retrying
+              ? pending
+                ? readingNote(stage ?? page.stage)
+                : "Queuing the page."
+              : null
+          }
+          onRetry={openRetry}
           onSaved={() => {
             void load();
             void refreshBook();
           }}
         />
       )}
+      {retryOpen && page ? (
+        <RetryPageDialog
+          mode={stored ? "digitize" : "retry"}
+          replacesReviewed={page.status === "reviewed"}
+          busy={digitizing}
+          onClose={() => {
+            if (!digitizing) setRetryOpen(false);
+          }}
+          onConfirm={(choice) => void digitize(choice)}
+        />
+      ) : null}
     </AdminGate>
   );
 };

@@ -172,6 +172,16 @@ export const ingestionJobs = pgTable("ingestion_jobs", {
   completedPages: integer("completed_pages").notNull().default(0),
   failedPages: integer("failed_pages").notNull().default(0),
   error: text("error"),
+  /**
+   * Optional reviewer note for this job only. Appended to the extraction
+   * prompt so a retry can correct what the last read missed.
+   */
+  instruction: text("instruction"),
+  /**
+   * Optional LiteLLM model for this job only. When set, the worker uses it
+   * instead of the global extraction_model setting.
+   */
+  model: text("model"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

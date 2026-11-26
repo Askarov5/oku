@@ -33,10 +33,31 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1   # Windows
 pip install fastapi "uvicorn[standard]" "psycopg[binary,pool]" boto3 pymupdf pillow pydantic pydantic-settings httpx python-multipart jsonschema pytest pytest-asyncio
 pip install -e . --no-deps
+```
+
+Then from the repo root, start or restart the worker (reads `apps/web/.env.local`, frees port 8000, starts uvicorn):
+
+```bash
+pnpm worker:restart
+```
+
+Foreground / live / mock / custom port:
+
+```bash
+pnpm worker:restart -- --foreground
+pnpm worker:restart -- --live
+pnpm worker:restart -- --mock
+pnpm worker:restart -- --port 8000
+```
+
+Or start it by hand:
+
+```bash
+cd services/ai-worker
 $env:STORAGE_DRIVER="local"
 $env:MOCK_LLM="true"
 $env:DATABASE_URL="postgresql://oku:oku@localhost:5432/oku"
-uvicorn app.main:app --reload --port 8000
+.\.venv\Scripts\uvicorn app.main:app --reload --port 8000
 ```
 
 Open [http://localhost:3000/admin/library](http://localhost:3000/admin/library) and sign in with `ADMIN_TOKEN` (default `dev-admin-token`).

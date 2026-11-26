@@ -25,6 +25,34 @@ describe("PageExtractedJsonSchema", () => {
     ]);
   });
 
+  it("accepts an optional table idInBook", () => {
+    const parsed = PageExtractedJsonSchema.parse({
+      pageNumber: 41,
+      printedPage: "41",
+      continuesFromPrevious: false,
+      blocks: [
+        {
+          id: "t1",
+          type: "table",
+          idInBook: "6-таблица",
+          caption: "Калк",
+          rows: [
+            { header: true, cells: [{ text: "Жылы" }] },
+            { header: false, cells: [{ text: "1897" }] },
+          ],
+        },
+      ],
+      warnings: [],
+      model: "test",
+      extractedAt: "2026-11-21T00:00:00.000Z",
+    });
+    expect(parsed.blocks[0]).toMatchObject({
+      type: "table",
+      idInBook: "6-таблица",
+      caption: "Калк",
+    });
+  });
+
   it("rejects the old one-block-per-paragraph shape", () => {
     const legacy = {
       pageNumber: 1,

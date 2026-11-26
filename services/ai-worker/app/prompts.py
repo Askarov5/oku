@@ -20,6 +20,27 @@ Return JSON only.
 Do not invent missing content. Leave out running headers and footers.
 """
 
+_TABLE_CHOICE = """
+Tables — decide for every printed table before emitting it:
+1. Review the grid. Ask whether GitHub-flavored Markdown can represent it
+   faithfully: one header row, a rectangular body, every cell on one line,
+   and no merged cells.
+2. If yes, put a Markdown table inside a markdown block.
+3. If not, emit a {"type": "table", ...} component. Do NOT force a complex
+   table into Markdown pipes, and do not invent a flattened grid that drops
+   spans or stacked headers.
+
+Use type "table" (not Markdown) when any of these is true:
+- a cell spans columns or rows (colspan / rowspan)
+- a header cell breaks onto a second printed line
+- a heading sits above subheadings (grouped / stacked headers)
+- the printed layout is irregular and a pipe table would lose structure
+
+Markdown tables are only for simple rectangular grids. When the page opens
+with the rest of a simple Markdown table begun on the previous page, give it
+an empty header row (| | | |) so that no data row is turned into a header.
+"""
+
 _BODY_BLOCKS = """
 The page is continuous Markdown interrupted only by components. Do NOT make one
 block per paragraph or per heading.
@@ -27,23 +48,21 @@ block per paragraph or per heading.
 Block types, in reading order:
 - {"type": "markdown", "markdown": "..."}
   All prose between two components goes in ONE markdown block: paragraphs
-  separated by a blank line, headings as #, ## or ###, lists, and simple
-  tables as GitHub-flavored Markdown tables (one header row, every cell on
-  one line, no merged cells). Definitions, examples and exercises are plain
-  Markdown too. When the page opens with the rest of a simple table begun on
-  the previous page, give it an empty header row (| | | |) so that no data
-  row is turned into a header.
-- {"type": "table", "caption": "1-таблица. ..." | null, "rows": [
+  separated by a blank line, headings as #, ## or ###, lists, and only those
+  tables that Markdown can represent (see Tables below). Definitions, examples
+  and exercises are plain Markdown too.
+- {"type": "table", "idInBook": "1-таблица" | null,
+   "caption": "Республиканын калкынын саны" | null, "rows": [
     {"header": true, "cells": [{"text": "Жылы", "rowspan": 2},
       {"text": "Анын ичинен", "colspan": 2}]},
     {"header": true, "cells": [{"text": "шаар калкы"}, {"text": "айыл калкы"}]},
     {"header": false, "cells": [{"text": "1897"}, {"text": "63,0"}, {"text": "600,0"}]}
   ]}
-  Use this, not a Markdown table, when a cell spans columns or rows, a header
-  cell breaks onto a second printed line, or a heading sits above subheadings.
-  The caption is the printed table label and title, or null. colspan and
-  rowspan are omitted when the cell does not span. Do not repeat the grid in
-  the markdown.
+  The structured table component for grids Markdown cannot carry. idInBook is
+  the printed table number/label alone (e.g. "6-таблица", "Таблица 6"), or
+  null when the table has none. caption is the descriptive title without that
+  number, or null. colspan and rowspan are omitted when the cell does not
+  span. Do not repeat the grid in the markdown.
 - {"type": "image", "box_2d": [ymin, xmin, ymax, xmax],
    "alt": "...", "ai_description": "...", "caption": "..." | null}
   One per map, diagram, photo or chart, placed exactly where it appears between
@@ -61,7 +80,7 @@ Block types, in reading order:
   title of its first section, they are two unit_header blocks, the chapter at
   level 1 and the section at level 2. Every other heading (an unnumbered
   subheading, "questions and tasks", table titles) stays inside markdown.
-
+""" + _TABLE_CHOICE + """
 Page fields:
 - printedPage: the page number printed on the page, exactly as printed, or null
   when the page carries none. This is not the position in the PDF.
@@ -77,10 +96,10 @@ chapter-like titles stay inside markdown (or tocEntries for a table of contents)
 _MARKDOWN_IMAGE_TABLE = """
 Allowed block types only:
 - {"type": "markdown", "markdown": "..."}
-- {"type": "table", "caption": "..." | null, "rows": [...]}  (merged cells only)
+- {"type": "table", "idInBook": "..." | null, "caption": "..." | null, "rows": [...]}
 - {"type": "image", "box_2d": [ymin, xmin, ymax, xmax], "alt": "...",
    "ai_description": "...", "caption": "..." | null}
-
+""" + _TABLE_CHOICE + """
 Page fields:
 - printedPage: the page number printed on the page, or null when none.
 - continuesFromPrevious: usually false for these pages.
@@ -239,6 +258,20 @@ are answer labels, not lesson openings.
     )
 
 
+def _with_instruction(prompt: str, instruction: str = "") -> str:
+    note = instruction.strip()
+    if not note:
+        return prompt
+    return "\n".join(
+        [
+            prompt,
+            "Reviewer note for this page only. Use it to correct the reading. "
+            "Keep the JSON shape above.",
+            note,
+        ]
+    )
+
+
 def prompt_for_role(
     role: str,
     *,
@@ -246,21 +279,24 @@ def prompt_for_role(
     language: str,
     grade: int | None = None,
     toc_hint: str = "",
+    instruction: str = "",
 ) -> str:
     """The full system/user prompt text for this page role."""
     if role == "table_of_contents":
-        return toc_prompt(title=title, language=language, grade=grade)
-    if role == "cover":
-        return cover_prompt(title=title, language=language, grade=grade)
-    if role == "glossary":
-        return glossary_prompt(title=title, language=language, grade=grade)
-    if role == "appendix":
-        return appendix_prompt(title=title, language=language, grade=grade)
-    if role == "answers":
-        return answers_prompt(title=title, language=language, grade=grade)
-    return body_prompt(
-        title=title, language=language, grade=grade, toc_hint=toc_hint
-    )
+        base = toc_prompt(title=title, language=language, grade=grade)
+    elif role == "cover":
+        base = cover_prompt(title=title, language=language, grade=grade)
+    elif role == "glossary":
+        base = glossary_prompt(title=title, language=language, grade=grade)
+    elif role == "appendix":
+        base = appendix_prompt(title=title, language=language, grade=grade)
+    elif role == "answers":
+        base = answers_prompt(title=title, language=language, grade=grade)
+    else:
+        base = body_prompt(
+            title=title, language=language, grade=grade, toc_hint=toc_hint
+        )
+    return _with_instruction(base, instruction)
 
 
 def normalize_toc_entries(raw: Any) -> list[dict[str, Any]]:

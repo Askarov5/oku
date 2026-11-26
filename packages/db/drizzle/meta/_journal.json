@@ -50,6 +50,20 @@
       "when": 1795400000000,
       "tag": "0006_page_roles_and_contents",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795500000000,
+      "tag": "0007_job_instruction",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795600000000,
+      "tag": "0008_job_model",
+      "breakpoints": true
     }
   ]
 }

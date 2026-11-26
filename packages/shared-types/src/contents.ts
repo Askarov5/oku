@@ -103,6 +103,7 @@ const collectText = (blocks: PageBlock[]): string =>
           return block.title;
         case "table":
           return [
+            block.idInBook ?? "",
             block.caption ?? "",
             ...block.rows.flatMap((row) =>
               row.cells.map((cell) => cell.text),

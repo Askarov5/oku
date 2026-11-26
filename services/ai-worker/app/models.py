@@ -70,6 +70,8 @@ class TableBlock(BaseModel):
 
     id: str = Field(default_factory=_new_id)
     type: Literal["table"]
+    # Printed table number/label in the book (e.g. "6-таблица"), not the block id.
+    idInBook: str | None = None
     caption: str | None = None
     rows: list[TableRow]
 

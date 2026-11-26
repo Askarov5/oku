@@ -168,7 +168,12 @@ export const UnitBody = ({
         if (segment.kind === "table") {
           const { block } = segment;
           return (
-            <TableView key={block.id} caption={block.caption} rows={block.rows} />
+            <TableView
+              key={block.id}
+              idInBook={block.idInBook}
+              caption={block.caption}
+              rows={block.rows}
+            />
           );
         }
         return (
