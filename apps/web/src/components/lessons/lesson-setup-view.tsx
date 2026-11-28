@@ -2,7 +2,7 @@
 
 import { Button, TrashIcon, fieldClass } from "@oku/ui";
 import type { ChangeEvent, DragEvent, ReactElement } from "react";
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   PlusIcon,
   SparklesIcon,
@@ -10,18 +10,27 @@ import {
 } from "@/components/lessons/lesson-icons";
 import { languageName } from "@/lib/catalog";
 import type {
-  LessonDeliverableFlags,
   LessonSetupDraft,
   StudioAttachment,
   StudioBookOption,
   StudioUnitOption,
 } from "@/lib/lesson-studio";
 import { defaultAudienceForBook } from "@/lib/lesson-studio";
+import {
+  emptyStudioCatalogFilters,
+  filterStudioBooks,
+  filterUnitsForBook,
+  studioCatalogCategories,
+  studioCatalogGrades,
+  type StudioCatalogFilters,
+} from "@/lib/studio-catalog-filter";
 
 interface LessonSetupViewProps {
   books: StudioBookOption[];
   draft: LessonSetupDraft;
   generating: boolean;
+  /** True when the page opened with a book and unit already chosen. */
+  unitConfirmed?: boolean;
   onChangeDraft: (next: LessonSetupDraft) => void;
   onGeneratePlan: () => void;
 }
@@ -44,36 +53,82 @@ export const LessonSetupView = ({
   books,
   draft,
   generating,
+  unitConfirmed = false,
   onChangeDraft,
   onGeneratePlan,
 }: LessonSetupViewProps): ReactElement => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [notesDraft, setNotesDraft] = useState("");
   const [dragActive, setDragActive] = useState(false);
+  const [filters, setFilters] = useState<StudioCatalogFilters>(
+    emptyStudioCatalogFilters,
+  );
+  const [browsingBookId, setBrowsingBookId] = useState<string | null>(null);
+  const [unitPicked, setUnitPicked] = useState(unitConfirmed);
+  const [fieldFocused, setFieldFocused] = useState(false);
+
+  useEffect(() => {
+    if (unitConfirmed) setUnitPicked(true);
+  }, [unitConfirmed]);
+
+  const categories = useMemo(() => studioCatalogCategories(books), [books]);
+  const grades = useMemo(() => studioCatalogGrades(books), [books]);
+  const filteredBooks = useMemo(
+    () => filterStudioBooks(books, filters),
+    [books, filters],
+  );
+
+  const browsingBook =
+    filteredBooks.find((item) => item.id === browsingBookId) ?? null;
+
+  const unitHits = useMemo(
+    () => (browsingBook ? filterUnitsForBook(browsingBook, filters.query) : []),
+    [browsingBook, filters.query],
+  );
 
   const activeBook =
-    books.find((item) => item.id === draft.bookId) ?? books[0] ?? null;
+    unitPicked
+      ? (books.find((item) => item.id === draft.bookId) ?? null)
+      : null;
   const activeUnit: StudioUnitOption | null =
-    activeBook?.units[draft.unitIndex] ?? activeBook?.units[0] ?? null;
+    activeBook?.units[draft.unitIndex] ?? null;
 
   const selectBook = (bookId: string): void => {
-    const nextBook = books.find((item) => item.id === bookId) ?? books[0];
+    setBrowsingBookId(bookId);
+    setUnitPicked(false);
+  };
+
+  const selectUnitHit = (bookId: string, unitIndex: number): void => {
+    const nextBook = books.find((item) => item.id === bookId);
     if (!nextBook) return;
     onChangeDraft({
       ...draft,
       bookId: nextBook.id,
-      unitIndex: 0,
+      unitIndex,
       audience: draft.audienceTouched
         ? draft.audience
         : defaultAudienceForBook(nextBook),
     });
+    setBrowsingBookId(bookId);
+    setUnitPicked(true);
   };
 
-  const selectUnit = (unitIndex: number): void => {
-    onChangeDraft({ ...draft, unitIndex });
+  const patchFilters = (patch: Partial<StudioCatalogFilters>): void => {
+    setFilters((prev) => ({ ...prev, ...patch }));
   };
 
-  const toggleDeliverable = (key: keyof LessonDeliverableFlags): void => {
+  const clearFilters = (): void => {
+    setFilters(emptyStudioCatalogFilters());
+  };
+
+  const clearBookSelection = (): void => {
+    setBrowsingBookId(null);
+    setUnitPicked(false);
+  };
+
+  const toggleDeliverable = (
+    key: "slides" | "kahootTest" | "homework",
+  ): void => {
     onChangeDraft({
       ...draft,
       deliverables: {
@@ -161,10 +216,33 @@ export const LessonSetupView = ({
     });
   };
 
+  const planReady = unitPicked && Boolean(activeUnit);
+  const planLabel = generating
+    ? "Generating lesson plan…"
+    : "Generate lesson plan";
+
   return (
+    <div
+      className="pb-[calc(8.25rem+env(safe-area-inset-bottom))] lg:pb-0"
+      onFocusCapture={(event) => {
+        const tag =
+          event.target instanceof HTMLElement ? event.target.tagName : "";
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+          setFieldFocused(true);
+        }
+      }}
+      onBlurCapture={(event) => {
+        const next = event.relatedTarget;
+        if (!(next instanceof Node) || !event.currentTarget.contains(next)) {
+          setFieldFocused(false);
+        }
+      }}
+    >
     <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
-      {/* Source selection, creative angle, and teacher uploads lead the main workspace. */}
-      <section aria-labelledby="setup-heading">
+      <section
+        aria-labelledby="setup-heading"
+        className="lg:col-start-1 lg:row-start-1"
+      >
         <h2
           id="setup-heading"
           className="text-2xl font-bold tracking-[-0.02em]"
@@ -174,68 +252,217 @@ export const LessonSetupView = ({
         <p className="mt-1.5 max-w-[65ch] text-sm leading-6 text-[var(--text-secondary)]">
           Pick a unit, add your own teaching angle or uploaded visuals, review
           the generated lesson plan first, and then generate slides, a
-          shareable Kahoot-style quiz, and homework.
+          shareable quiz, and homework.
         </p>
 
-        {/* 1. Canonical Book & Unit Source */}
+        {/* 1. Searchable book & unit picker */}
         <div className="mt-6 rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)]">
-          <div className="grid gap-4 p-5 sm:grid-cols-2">
-            <div>
+          <div className="grid gap-3 border-b border-[var(--border-hairline)] p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-4">
+            <div className="sm:col-span-2 lg:col-span-2">
               <label
-                htmlFor="studio-book-select"
+                htmlFor="studio-catalog-search"
                 className="block text-sm font-semibold"
               >
-                Book
+                Search materials
+              </label>
+              <input
+                id="studio-catalog-search"
+                type="search"
+                value={filters.query}
+                onChange={(event) => patchFilters({ query: event.target.value })}
+                placeholder="Book title, subject, topic…"
+                className={`${fieldClass} mt-1.5`}
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="studio-catalog-language"
+                className="block text-sm font-semibold"
+              >
+                Language
               </label>
               <select
-                id="studio-book-select"
-                value={activeBook?.id ?? ""}
-                onChange={(event) => selectBook(event.target.value)}
+                id="studio-catalog-language"
+                value={filters.language}
+                onChange={(event) =>
+                  patchFilters({
+                    language: event.target.value as StudioCatalogFilters["language"],
+                  })
+                }
                 className={`${fieldClass} mt-1.5`}
               >
-                {books.map((book) => {
-                  const gradePart =
-                    book.isSchoolTextbook && book.grade !== null
-                      ? `Grade ${book.grade} · `
-                      : "";
-                  const langPart =
-                    book.language === "en"
-                      ? "English"
-                      : languageName(book.language);
-                  return (
-                    <option key={book.id} value={book.id}>
-                      {`${book.title} (${gradePart}${langPart})`}
-                    </option>
-                  );
-                })}
+                <option value="all">All</option>
+                <option value="ky">Kyrgyz</option>
+                <option value="ru">Russian</option>
+                <option value="en">English</option>
               </select>
             </div>
-
             <div>
               <label
-                htmlFor="studio-unit-select"
+                htmlFor="studio-catalog-grade"
                 className="block text-sm font-semibold"
               >
-                Unit
+                Grade
               </label>
               <select
-                id="studio-unit-select"
-                value={draft.unitIndex}
-                onChange={(event) => selectUnit(Number(event.target.value))}
+                id="studio-catalog-grade"
+                value={filters.grade === "all" ? "all" : String(filters.grade)}
+                onChange={(event) =>
+                  patchFilters({
+                    grade:
+                      event.target.value === "all"
+                        ? "all"
+                        : Number(event.target.value),
+                  })
+                }
                 className={`${fieldClass} mt-1.5`}
               >
-                {(activeBook?.units ?? []).map((unit, idx) => (
-                  <option key={unit.id} value={idx}>
-                    {`${unit.title} · ${unit.pageRangeLabel}`}
+                <option value="all">All</option>
+                {grades.map((grade) => (
+                  <option key={grade} value={grade}>
+                    Grade {grade}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="sm:col-span-2 lg:col-span-4">
+              <label
+                htmlFor="studio-catalog-category"
+                className="block text-sm font-semibold"
+              >
+                Category
+              </label>
+              <select
+                id="studio-catalog-category"
+                value={filters.category}
+                onChange={(event) =>
+                  patchFilters({ category: event.target.value })
+                }
+                className={`${fieldClass} mt-1.5`}
+              >
+                <option value="all">All categories</option>
+                {categories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
                   </option>
                 ))}
               </select>
             </div>
           </div>
 
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-[var(--border-hairline)] px-4 py-1 sm:px-5">
+            <p className="font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--text-secondary)]">
+              {browsingBook
+                ? `${unitHits.length} unit${unitHits.length === 1 ? "" : "s"} in ${browsingBook.title}`
+                : `${filteredBooks.length} book${filteredBooks.length === 1 ? "" : "s"}`}
+            </p>
+            <div className="flex flex-wrap items-center gap-1">
+              {browsingBook ? (
+                <button
+                  type="button"
+                  onClick={clearBookSelection}
+                  className="inline-flex min-h-11 items-center px-2 text-sm font-medium text-[var(--text-secondary)] underline-offset-2 hover:underline"
+                >
+                  Change book
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="inline-flex min-h-11 items-center px-2 text-sm font-medium text-[var(--text-secondary)] underline-offset-2 hover:underline"
+              >
+                Clear filters
+              </button>
+            </div>
+          </div>
+
+          {!browsingBook ? (
+            <ul className="max-h-[22rem] overflow-y-auto divide-y divide-[var(--border-hairline)]">
+              {filteredBooks.length === 0 ? (
+                <li className="px-5 py-8 text-sm text-[var(--text-secondary)]">
+                  No books match this search. Try a different title or clear the
+                  filters.
+                </li>
+              ) : (
+                filteredBooks.map((book) => {
+                  const langLabel =
+                    book.language === "en"
+                      ? "English"
+                      : languageName(book.language);
+                  return (
+                    <li key={book.id}>
+                      <button
+                        type="button"
+                        onClick={() => selectBook(book.id)}
+                        className="min-h-11 w-full px-4 py-3.5 text-left transition-colors hover:bg-[var(--bg-hover)] sm:px-5"
+                      >
+                        <p className="text-sm font-semibold leading-snug">
+                          {book.title}
+                        </p>
+                        <p className="mt-1 font-[family-name:var(--font-mono)] text-xs text-[var(--text-secondary)]">
+                          {book.categoryName}
+                          {book.isSchoolTextbook && book.grade !== null
+                            ? ` · Grade ${book.grade}`
+                            : ""}
+                          {` · ${langLabel}`}
+                          {` · ${book.units.length} unit${book.units.length === 1 ? "" : "s"}`}
+                          {book.source === "sample" ? " · Sample" : ""}
+                        </p>
+                      </button>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          ) : (
+            <ul className="max-h-[22rem] overflow-y-auto divide-y divide-[var(--border-hairline)]">
+              {unitHits.length === 0 ? (
+                <li className="px-5 py-8 text-sm text-[var(--text-secondary)]">
+                  No units in this book match the search. Clear the query or
+                  pick another book.
+                </li>
+              ) : (
+                unitHits.map(({ book, unit, unitIndex }) => {
+                  const selected =
+                    unitPicked &&
+                    book.id === draft.bookId &&
+                    unitIndex === draft.unitIndex;
+                  return (
+                    <li key={unit.id}>
+                      <button
+                        type="button"
+                        onClick={() => selectUnitHit(book.id, unitIndex)}
+                        className={`min-h-11 w-full px-4 py-3.5 text-left transition-colors sm:px-5 ${
+                          selected
+                            ? "bg-[var(--bg-hover)]"
+                            : "hover:bg-[var(--bg-hover)]"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <p className="text-sm font-semibold leading-snug">
+                            {unit.title}
+                          </p>
+                          <span className="font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--text-secondary)]">
+                            {unit.pageRangeLabel}
+                          </span>
+                        </div>
+                        <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-[var(--text-secondary)]">
+                          {unit.summary}
+                        </p>
+                      </button>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          )}
+
           {activeBook && activeUnit ? (
             <div className="border-t border-[var(--border-hairline)] px-5 py-4">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.04em] text-[var(--text-secondary)]">
+                Selected unit
+              </p>
+              <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
                 <h3 className="text-base font-semibold">{activeUnit.title}</h3>
                 <span className="font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--text-secondary)]">
                   {activeUnit.pageRangeLabel}
@@ -262,9 +489,11 @@ export const LessonSetupView = ({
             </div>
           ) : null}
         </div>
+      </section>
 
+      <div className="order-3 grid gap-8 lg:order-none lg:col-start-1 lg:row-start-2">
         {/* 2. Teacher's Creative Angle / Analogy */}
-        <div className="mt-8">
+        <div>
           <label
             htmlFor="creative-angle"
             className="block text-lg font-semibold tracking-[-0.01em]"
@@ -294,7 +523,7 @@ export const LessonSetupView = ({
                 onClick={() =>
                   onChangeDraft({ ...draft, creativeAngle: prompt })
                 }
-                className="rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)] px-3 py-1.5 text-left text-xs text-[var(--text-secondary)] transition-colors hover:border-[var(--border-control)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] coarse:min-h-[44px]"
+                className="min-h-11 rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)] px-3 py-2 text-left text-sm text-[var(--text-secondary)] transition-colors hover:border-[var(--border-control)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
               >
                 {prompt}
               </button>
@@ -303,7 +532,7 @@ export const LessonSetupView = ({
         </div>
 
         {/* 3. Bring Your Own Materials (Upload images, slides, or NotebookLM notes) */}
-        <div className="mt-8">
+        <div>
           <h3 className="text-lg font-semibold tracking-[-0.01em]">
             Bring your own materials
           </h3>
@@ -417,12 +646,12 @@ export const LessonSetupView = ({
 
                     <div className="flex items-center gap-3">
                       {item.previewUrl ? (
-                        <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-[var(--text-secondary)]">
+                        <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-[var(--text-secondary)]">
                           <input
                             type="checkbox"
                             checked={item.includeAsSlide}
                             onChange={() => toggleAttachmentSlide(item.id)}
-                            className="size-4 rounded-[var(--rounded-xs)]"
+                            className="size-6 rounded-[var(--rounded-xs)]"
                           />
                           Insert as slide
                         </label>
@@ -442,12 +671,12 @@ export const LessonSetupView = ({
             ) : null}
           </div>
         </div>
-      </section>
+      </div>
 
-      {/* Right-hand Parameters column: Audience, Lesson count, Duration, Deliverables, and CTA. */}
+      {/* Lesson settings sit beside the source on a wide screen, and directly under the unit picker on a phone. */}
       <aside
         aria-labelledby="params-heading"
-        className="rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)] p-5 lg:sticky lg:top-6"
+        className="order-2 rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)] p-4 sm:p-5 lg:sticky lg:top-6 lg:order-none lg:col-start-2 lg:row-span-2 lg:row-start-1"
       >
         <h3 id="params-heading" className="text-lg font-semibold">
           Lesson settings
@@ -546,12 +775,12 @@ export const LessonSetupView = ({
               Materials to generate after plan review
             </legend>
             <div className="mt-3 flex flex-col gap-3">
-              <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <label className="flex min-h-11 cursor-pointer items-start gap-3 text-sm">
                 <input
                   type="checkbox"
                   checked={draft.deliverables.slides}
                   onChange={() => toggleDeliverable("slides")}
-                  className="mt-0.5 size-4 shrink-0 rounded-[var(--rounded-xs)]"
+                  className="mt-0.5 size-6 shrink-0 rounded-[var(--rounded-xs)]"
                 />
                 <span>
                   <span className="block font-medium">Generate slides</span>
@@ -561,16 +790,16 @@ export const LessonSetupView = ({
                 </span>
               </label>
 
-              <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <label className="flex min-h-11 cursor-pointer items-start gap-3 text-sm">
                 <input
                   type="checkbox"
                   checked={draft.deliverables.kahootTest}
                   onChange={() => toggleDeliverable("kahootTest")}
-                  className="mt-0.5 size-4 shrink-0 rounded-[var(--rounded-xs)]"
+                  className="mt-0.5 size-6 shrink-0 rounded-[var(--rounded-xs)]"
                 />
                 <span>
                   <span className="block font-medium">
-                    Generate test (Kahoot-style)
+                    Generate quiz
                   </span>
                   <span className="block text-xs text-[var(--text-secondary)]">
                     Shareable link &amp; QR, timed questions, auto-graded 2–5
@@ -578,12 +807,12 @@ export const LessonSetupView = ({
                 </span>
               </label>
 
-              <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <label className="flex min-h-11 cursor-pointer items-start gap-3 text-sm">
                 <input
                   type="checkbox"
                   checked={draft.deliverables.homework}
                   onChange={() => toggleDeliverable("homework")}
-                  className="mt-0.5 size-4 shrink-0 rounded-[var(--rounded-xs)]"
+                  className="mt-0.5 size-6 shrink-0 rounded-[var(--rounded-xs)]"
                 />
                 <span>
                   <span className="block font-medium">Generate homework</span>
@@ -595,17 +824,48 @@ export const LessonSetupView = ({
             </div>
           </fieldset>
 
-          <Button
-            className="mt-2 w-full"
-            disabled={generating || !activeUnit}
-            aria-busy={generating}
-            onClick={onGeneratePlan}
-          >
-            <SparklesIcon />
-            {generating ? "Generating lesson plan…" : "Generate lesson plan"}
-          </Button>
+          {!planReady && !generating ? (
+            <p className="mt-3 text-sm leading-5 text-[var(--text-secondary)]">
+              Choose a unit to generate the plan.
+            </p>
+          ) : null}
+
+          <div className="mt-2 hidden lg:block">
+            <Button
+              className="w-full"
+              disabled={generating || !planReady}
+              aria-busy={generating}
+              onClick={onGeneratePlan}
+            >
+              <SparklesIcon />
+              {planLabel}
+            </Button>
+          </div>
         </div>
       </aside>
+    </div>
+
+      <div
+        aria-hidden={fieldFocused}
+        className={`fixed inset-x-0 bottom-0 z-30 border-t border-[var(--border-hairline)] bg-[var(--bg-canvas)] px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] transition-transform duration-150 ease-out motion-reduce:transition-none lg:hidden ${
+          fieldFocused ? "pointer-events-none translate-y-full" : ""
+        }`}
+      >
+        <p className="mb-2 truncate font-[family-name:var(--font-mono)] text-xs text-[var(--text-secondary)]">
+          {activeUnit && planReady
+            ? `${activeUnit.title} · ${activeUnit.pageRangeLabel}`
+            : "Choose a unit to continue"}
+        </p>
+        <Button
+          className="w-full"
+          disabled={generating || !planReady}
+          aria-busy={generating}
+          onClick={onGeneratePlan}
+        >
+          <SparklesIcon />
+          {planLabel}
+        </Button>
+      </div>
     </div>
   );
 };

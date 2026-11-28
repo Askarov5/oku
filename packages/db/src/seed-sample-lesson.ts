@@ -1,6 +1,11 @@
 import { eq } from "drizzle-orm";
 import { createDb } from "./client.js";
-import { lessons, quizQuestions } from "./schema.js";
+import {
+  lessons,
+  quizQuestions,
+  type QuizAnswerKeyJson,
+  type QuizSpecJson,
+} from "./schema.js";
 
 const databaseUrl =
   process.env.DATABASE_URL ?? "postgresql://oku:oku@localhost:5432/oku";
@@ -52,7 +57,7 @@ const slides = [
     id: "slide-quiz",
     kind: "quiz_launch" as const,
     lessonNumber: 1,
-    title: "Kahoot check",
+    title: "Quiz check",
     bullets: [`Open /play/${SHARE_CODE}`],
     formulaOrCallout: null,
     pageRef: null,
@@ -62,76 +67,95 @@ const slides = [
   },
 ];
 
-const homework = [
+const liveQuestions = [
   {
-    id: "hw-1",
-    title: "Compare two kicks",
-    prompt:
-      "A 0.45 kg ball is kicked at 10 m/s and later at 20 m/s. Compute both kinetic energies.",
-    expectedMinutes: 8,
-    answerGuide: "22.5 J and 90 J.",
-  },
-];
-
-const questions = [
-  {
+    kind: "multiple_choice" as const,
     prompt: "What happens to kinetic energy when shot speed doubles?",
     scenarioNote: "Same soccer ball mass.",
-    choices: [
-      { id: "q1-a", shape: "triangle" as const, text: "It doubles" },
-      { id: "q1-b", shape: "diamond" as const, text: "It quadruples" },
-      { id: "q1-c", shape: "circle" as const, text: "It stays the same" },
-      { id: "q1-d", shape: "square" as const, text: "It halves" },
-    ],
-    correctChoiceId: "q1-b",
+    requireExplanation: false,
+    spec: {
+      choices: [
+        { id: "q1-a", shape: "triangle" as const, text: "It doubles" },
+        { id: "q1-b", shape: "diamond" as const, text: "It quadruples" },
+        { id: "q1-c", shape: "circle" as const, text: "It stays the same" },
+        { id: "q1-d", shape: "square" as const, text: "It halves" },
+      ],
+    },
+    answerKey: { correctChoiceId: "q1-b" },
     explanation: "Ek depends on v squared, so 2v → 4× energy.",
     timeLimitSec: 20,
     points: 1000,
   },
   {
+    kind: "multiple_choice" as const,
     prompt: "Which change raises Ek more for a free kick?",
     scenarioNote: null,
-    choices: [
-      { id: "q2-a", shape: "triangle" as const, text: "Doubling mass" },
-      { id: "q2-b", shape: "diamond" as const, text: "Doubling speed" },
-      { id: "q2-c", shape: "circle" as const, text: "Halving mass" },
-      { id: "q2-d", shape: "square" as const, text: "Halving speed" },
-    ],
-    correctChoiceId: "q2-b",
+    requireExplanation: false,
+    spec: {
+      choices: [
+        { id: "q2-a", shape: "triangle" as const, text: "Doubling mass" },
+        { id: "q2-b", shape: "diamond" as const, text: "Doubling speed" },
+        { id: "q2-c", shape: "circle" as const, text: "Halving mass" },
+        { id: "q2-d", shape: "square" as const, text: "Halving speed" },
+      ],
+    },
+    answerKey: { correctChoiceId: "q2-b" },
     explanation: "Speed is squared; mass is only linear.",
     timeLimitSec: 20,
     points: 1000,
   },
   {
+    kind: "multiple_choice" as const,
     prompt: "A 0.45 kg ball at 10 m/s has about how much kinetic energy?",
     scenarioNote: null,
-    choices: [
-      { id: "q3-a", shape: "triangle" as const, text: "2.25 J" },
-      { id: "q3-b", shape: "diamond" as const, text: "4.5 J" },
-      { id: "q3-c", shape: "circle" as const, text: "22.5 J" },
-      { id: "q3-d", shape: "square" as const, text: "45 J" },
-    ],
-    correctChoiceId: "q3-c",
+    requireExplanation: false,
+    spec: {
+      choices: [
+        { id: "q3-a", shape: "triangle" as const, text: "2.25 J" },
+        { id: "q3-b", shape: "diamond" as const, text: "4.5 J" },
+        { id: "q3-c", shape: "circle" as const, text: "22.5 J" },
+        { id: "q3-d", shape: "square" as const, text: "45 J" },
+      ],
+    },
+    answerKey: { correctChoiceId: "q3-c" },
     explanation: "½ × 0.45 × 100 = 22.5 J.",
     timeLimitSec: 25,
     points: 1000,
   },
   {
-    prompt: "Why does a light fast ball hurt more than a heavy slow pass?",
+    kind: "true_false" as const,
+    prompt: "Squared speed can outweigh mass when comparing kinetic energy.",
     scenarioNote: null,
-    choices: [
-      { id: "q4-a", shape: "triangle" as const, text: "Mass alone decides energy" },
-      {
-        id: "q4-b",
-        shape: "diamond" as const,
-        text: "Squared speed can outweigh mass",
-      },
-      { id: "q4-c", shape: "circle" as const, text: "Gravity stores the energy" },
-      { id: "q4-d", shape: "square" as const, text: "Friction cancels kinetic energy" },
-    ],
-    correctChoiceId: "q4-b",
+    requireExplanation: false,
+    spec: {},
+    answerKey: { correct: true },
     explanation: "Velocity squared dominates the kinetic energy formula.",
-    timeLimitSec: 25,
+    timeLimitSec: 15,
+    points: 1000,
+  },
+];
+
+const homeworkQuestions = [
+  {
+    kind: "numeric_range" as const,
+    prompt: "A 0.45 kg ball at 10 m/s: what is Ek in Joules?",
+    scenarioNote: null,
+    requireExplanation: true,
+    spec: { unit: "J" },
+    answerKey: { min: 22, max: 23 },
+    explanation: "½ × 0.45 × 100 = 22.5 J.",
+    timeLimitSec: 40,
+    points: 1000,
+  },
+  {
+    kind: "true_false" as const,
+    prompt: "Doubling shot speed multiplies kinetic energy by four.",
+    scenarioNote: null,
+    requireExplanation: true,
+    spec: {},
+    answerKey: { correct: true },
+    explanation: "(2v)² = 4v².",
+    timeLimitSec: 20,
     points: 1000,
   },
 ];
@@ -165,12 +189,19 @@ const run = async (): Promise<void> => {
       minutesPerLesson: 45,
       creativeAngle:
         "Explain kinetic energy using a soccer ball, free kicks, and comparing shot speed vs. ball weight so students stay hooked.",
-      deliverables: { slides: true, kahootTest: true, homework: true },
+      deliverables: {
+        slides: true,
+        kahootTest: true,
+        homework: true,
+        slideCount: 4,
+        quizCount: 4,
+        homeworkCount: 6,
+      },
       stage: "studio",
       title: "Kinetic Energy: The Physics of a Free Kick",
       planBlocks,
       slides,
-      homework,
+      homework: [],
       grounding: null,
       conceptId: null,
       isSample: true,
@@ -181,19 +212,36 @@ const run = async (): Promise<void> => {
     throw new Error("Failed to insert sample lesson");
   }
 
-  await db.insert(quizQuestions).values(
-    questions.map((question, orderIndex) => ({
+  await db.insert(quizQuestions).values([
+    ...liveQuestions.map((question, orderIndex) => ({
       lessonId: row.id,
       orderIndex,
+      placement: "live" as const,
+      kind: question.kind,
       prompt: question.prompt,
       scenarioNote: question.scenarioNote,
-      choices: question.choices,
-      correctChoiceId: question.correctChoiceId,
+      requireExplanation: question.requireExplanation,
+      spec: question.spec as QuizSpecJson,
+      answerKey: question.answerKey as QuizAnswerKeyJson,
       explanation: question.explanation,
       timeLimitSec: question.timeLimitSec,
       points: question.points,
     })),
-  );
+    ...homeworkQuestions.map((question, orderIndex) => ({
+      lessonId: row.id,
+      orderIndex,
+      placement: "homework" as const,
+      kind: question.kind,
+      prompt: question.prompt,
+      scenarioNote: question.scenarioNote,
+      requireExplanation: question.requireExplanation,
+      spec: question.spec as QuizSpecJson,
+      answerKey: question.answerKey as QuizAnswerKeyJson,
+      explanation: question.explanation,
+      timeLimitSec: question.timeLimitSec,
+      points: question.points,
+    })),
+  ]);
 
   console.log(`Seeded sample lesson ${SHARE_CODE} (${row.id}).`);
   process.exit(0);

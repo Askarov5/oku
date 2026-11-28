@@ -10,7 +10,9 @@ import {
   type AuthUser,
 } from "@/components/lessons/account-auth-form";
 import { LessonHomeworkPanel } from "@/components/lessons/lesson-homework-panel";
+import { LessonBookPanel } from "@/components/lessons/lesson-book-panel";
 import {
+  BookOpenIcon,
   DocumentIcon,
   ExternalLinkIcon,
   PlayIcon,
@@ -19,6 +21,7 @@ import {
 } from "@/components/lessons/lesson-icons";
 import { LessonKahootPanel } from "@/components/lessons/lesson-kahoot-panel";
 import { LessonPlanReview } from "@/components/lessons/lesson-plan-review";
+import { LessonPreviewView } from "@/components/lessons/lesson-preview-view";
 import { LessonSetupView } from "@/components/lessons/lesson-setup-view";
 import { LessonSlidesPanel } from "@/components/lessons/lesson-slides-panel";
 import { LessonStudioRail } from "@/components/lessons/lesson-studio-rail";
@@ -29,18 +32,49 @@ import type {
   LessonSetupDraft,
   LessonWorkspace,
   StudioBookOption,
+  StudioWorkflowStage,
 } from "@/lib/lesson-studio";
 import {
+  DEFAULT_HOMEWORK_COUNT,
+  DEFAULT_QUIZ_COUNT,
+  DEFAULT_SLIDE_COUNT,
   SAMPLE_STUDIO_BOOKS,
   defaultAudienceForBook,
+  isStudioOpened,
+  markStudioOpened,
 } from "@/lib/lesson-studio";
 
-type StudioTab = "slides" | "plan" | "kahoot" | "homework";
+type StudioTab = "book" | "slides" | "plan" | "kahoot" | "homework";
+
+type StudioSaveSection = "slides" | "questions" | "homework";
+
+interface StudioContentBaseline {
+  slides: string;
+  questions: string;
+  homework: string;
+}
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
+
+const snapshotStudioBaseline = (
+  lesson: LessonWorkspace,
+): StudioContentBaseline => ({
+  slides: JSON.stringify(lesson.slides ?? []),
+  questions: JSON.stringify(lesson.questions ?? []),
+  homework: JSON.stringify(lesson.homework ?? []),
+});
+
+const sectionFingerprint = (
+  lesson: LessonWorkspace,
+  section: StudioSaveSection,
+): string => {
+  if (section === "slides") return JSON.stringify(lesson.slides ?? []);
+  if (section === "questions") return JSON.stringify(lesson.questions ?? []);
+  return JSON.stringify(lesson.homework ?? []);
+};
 
 const initialSetupForBooks = (
   books: StudioBookOption[],
@@ -64,6 +98,9 @@ const initialSetupForBooks = (
       slides: true,
       kahootTest: true,
       homework: true,
+      slideCount: DEFAULT_SLIDE_COUNT,
+      quizCount: DEFAULT_QUIZ_COUNT,
+      homeworkCount: DEFAULT_HOMEWORK_COUNT,
     },
     attachments: [],
   };
@@ -83,22 +120,50 @@ const LessonStudioContent = (): ReactElement => {
   const [setupDraft, setSetupDraft] = useState<LessonSetupDraft>(() =>
     initialSetupForBooks(SAMPLE_STUDIO_BOOKS, bookIdParam, unitParam),
   );
-  const [studioTab, setStudioTab] = useState<StudioTab>("slides");
+  const [studioTab, setStudioTab] = useState<StudioTab>("book");
   const [generatingPlan, setGeneratingPlan] = useState(false);
   const [generatingMaterials, setGeneratingMaterials] = useState(false);
   const [presenterOpen, setPresenterOpen] = useState(false);
   const [presenterStart, setPresenterStart] = useState(0);
   const [studioNotice, setStudioNotice] = useState<string | null>(null);
+  const [workflowOverride, setWorkflowOverride] =
+    useState<StudioWorkflowStage | null>(null);
+  const [studioOpenedTick, setStudioOpenedTick] = useState(0);
+  const [savingSection, setSavingSection] = useState<StudioSaveSection | null>(
+    null,
+  );
+  const [savedFlashSection, setSavedFlashSection] =
+    useState<StudioSaveSection | null>(null);
+  const [baselineVersion, setBaselineVersion] = useState(0);
   const patchTimers = useRef<Map<string, number>>(new Map());
+  const studioBaselines = useRef<Map<string, StudioContentBaseline>>(new Map());
+  const lessonsRef = useRef<LessonWorkspace[]>([]);
+  const savedFlashTimer = useRef<number | null>(null);
+
+  const normalizeWorkspace = useCallback(
+    (lesson: LessonWorkspace): LessonWorkspace => ({
+      ...lesson,
+      slides: lesson.slides ?? [],
+      questions: lesson.questions ?? [],
+      homework: lesson.homework ?? [],
+      planBlocks: lesson.planBlocks ?? [],
+      leaderboard: lesson.leaderboard ?? [],
+      homeworkLeaderboard: lesson.homeworkLeaderboard ?? [],
+      attachments: lesson.attachments ?? [],
+    }),
+    [],
+  );
 
   const refreshLessons = useCallback(async (): Promise<LessonWorkspace[]> => {
     const res = await fetch("/api/lessons");
     if (!res.ok) return [];
     const data = (await res.json()) as { lessons?: LessonWorkspace[] };
-    const items = Array.isArray(data.lessons) ? data.lessons : [];
+    const items = (Array.isArray(data.lessons) ? data.lessons : []).map(
+      (lesson) => normalizeWorkspace(lesson),
+    );
     setLessons(items);
     return items;
-  }, []);
+  }, [normalizeWorkspace]);
 
   useEffect(() => {
     let alive = true;
@@ -176,18 +241,23 @@ const LessonStudioContent = (): ReactElement => {
   const activeWorkspace =
     lessons.find((item) => item.id === activeLessonId) ?? null;
 
+  lessonsRef.current = lessons;
+
   const upsertLesson = (lesson: LessonWorkspace): void => {
+    const normalized = normalizeWorkspace(lesson);
     setLessons((prev) => {
-      const without = prev.filter((item) => item.id !== lesson.id);
-      return [lesson, ...without];
+      const without = prev.filter((item) => item.id !== normalized.id);
+      return [normalized, ...without];
     });
   };
 
   const pollLessonUntil = async (
     lessonId: string,
     done: (lesson: LessonWorkspace) => boolean,
+    /** Materials fan out many LLM calls; allow ~10 minutes before soft-timeout. */
+    maxAttempts = 90,
   ): Promise<LessonWorkspace | null> => {
-    for (let attempt = 0; attempt < 90; attempt += 1) {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       await sleep(attempt === 0 ? 600 : 1500);
       const res = await fetch(`/api/lessons/${lessonId}`);
       if (!res.ok) continue;
@@ -200,9 +270,17 @@ const LessonStudioContent = (): ReactElement => {
         return data.lesson;
       }
     }
-    setStudioNotice("Timed out waiting for generation. Refresh and try again.");
+    setStudioNotice(
+      "Still generating in the background. Preview will unlock when materials are ready — you can stay on this page.",
+    );
     return null;
   };
+
+  const openPreviewFromLesson = useCallback((_lesson: LessonWorkspace): void => {
+    setWorkflowOverride("preview");
+    setStudioNotice(null);
+    setStudioTab("book");
+  }, []);
 
   const handleGeneratePlan = (): void => {
     const book = books.find((item) => item.id === setupDraft.bookId) ?? books[0];
@@ -287,17 +365,10 @@ const LessonStudioContent = (): ReactElement => {
         const finished = await pollLessonUntil(
           activeWorkspace.id,
           (lesson) => lesson.stage === "studio" || lesson.dbStage === "studio",
+          400,
         );
         if (finished) {
-          if (finished.deliverables.slides && finished.slides.length > 0) {
-            setStudioTab("slides");
-          } else if (finished.deliverables.kahootTest) {
-            setStudioTab("kahoot");
-          } else if (finished.deliverables.homework) {
-            setStudioTab("homework");
-          } else {
-            setStudioTab("plan");
-          }
+          openPreviewFromLesson(finished);
           if (finished.jobError) setStudioNotice(finished.jobError);
         }
       } catch {
@@ -308,17 +379,90 @@ const LessonStudioContent = (): ReactElement => {
     })();
   };
 
-  const patchWorkspaceRemote = (
+  /** If the active poll gave up early, keep soft-polling until materials land. */
+  useEffect(() => {
+    if (!activeWorkspace) return;
+    const waiting =
+      activeWorkspace.stage === "generating_materials" ||
+      activeWorkspace.stage === "generating_plan";
+    if (!waiting || generatingMaterials || generatingPlan) return;
+
+    let alive = true;
+    const sync = async (): Promise<void> => {
+      try {
+        const res = await fetch(`/api/lessons/${activeWorkspace.id}`);
+        if (!res.ok || !alive) return;
+        const data = (await res.json()) as { lesson?: LessonWorkspace };
+        if (!alive || !data.lesson) return;
+        upsertLesson(data.lesson);
+        if (
+          data.lesson.stage === "studio" ||
+          data.lesson.dbStage === "studio"
+        ) {
+          openPreviewFromLesson(data.lesson);
+          return;
+        }
+        if (
+          data.lesson.stage === "review_plan" ||
+          data.lesson.dbStage === "review_plan"
+        ) {
+          setStudioNotice(null);
+          setWorkflowOverride("review_plan");
+        }
+        if (data.lesson.stage === "failed" || data.lesson.dbStage === "failed") {
+          setStudioNotice(data.lesson.jobError ?? "Generation failed");
+        }
+      } catch {
+        // Ignore offline blips; interval retries.
+      }
+    };
+
+    void sync();
+    const timer = window.setInterval(() => {
+      void sync();
+    }, 3000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [
+    activeWorkspace?.id,
+    activeWorkspace?.stage,
+    generatingMaterials,
+    generatingPlan,
+    openPreviewFromLesson,
+  ]);
+
+  const patchWorkspace = (
     lessonId: string,
     patch: Partial<LessonWorkspace>,
   ): void => {
     setLessons((prev) =>
-      prev.map((item) =>
-        item.id === lessonId
-          ? { ...item, ...patch, updatedAt: new Date().toISOString() }
-          : item,
-      ),
+      prev.map((item) => {
+        if (item.id !== lessonId) return item;
+        const next = normalizeWorkspace({
+          ...item,
+          ...patch,
+          updatedAt: new Date().toISOString(),
+        });
+        // Partial patches must not clobber arrays with undefined.
+        if (patch.slides === undefined) next.slides = item.slides ?? [];
+        if (patch.questions === undefined) next.questions = item.questions ?? [];
+        if (patch.homework === undefined) next.homework = item.homework ?? [];
+        if (patch.planBlocks === undefined) {
+          next.planBlocks = item.planBlocks ?? [];
+        }
+        return next;
+      }),
     );
+  };
+
+  /** Debounced remote save for plan-review edits (title, plan blocks, deliverables). */
+  const patchWorkspaceRemote = (
+    lessonId: string,
+    patch: Partial<LessonWorkspace>,
+  ): void => {
+    patchWorkspace(lessonId, patch);
     const existing = patchTimers.current.get(lessonId);
     if (existing) window.clearTimeout(existing);
     const handle = window.setTimeout(() => {
@@ -349,6 +493,102 @@ const LessonStudioContent = (): ReactElement => {
     patchTimers.current.set(lessonId, handle);
   };
 
+  const saveWorkspaceSection = async (
+    lessonId: string,
+    section: StudioSaveSection,
+  ): Promise<void> => {
+    const lesson = lessonsRef.current.find((item) => item.id === lessonId);
+    if (!lesson || lesson.isSample) return;
+
+    const fingerprint = sectionFingerprint(lesson, section);
+    const body =
+      section === "slides"
+        ? { slides: lesson.slides }
+        : section === "questions"
+          ? { questions: lesson.questions }
+          : { homework: lesson.homework };
+
+    setSavingSection(section);
+    setStudioNotice(null);
+    if (savedFlashTimer.current) {
+      window.clearTimeout(savedFlashTimer.current);
+      savedFlashTimer.current = null;
+    }
+    setSavedFlashSection(null);
+
+    try {
+      const res = await fetch(`/api/lessons/${lessonId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        setStudioNotice(data.error ?? "Could not save edits");
+        return;
+      }
+      const data = (await res.json()) as { lesson?: LessonWorkspace };
+      const current = lessonsRef.current.find((item) => item.id === lessonId);
+      if (
+        current &&
+        sectionFingerprint(current, section) !== fingerprint
+      ) {
+        // Teacher kept editing while the request was in flight; leave dirty.
+        return;
+      }
+
+      if (data.lesson) {
+        upsertLesson(data.lesson);
+        const previous = studioBaselines.current.get(lessonId);
+        const fromServer = snapshotStudioBaseline(
+          normalizeWorkspace(data.lesson),
+        );
+        studioBaselines.current.set(lessonId, {
+          slides:
+            section === "slides"
+              ? fromServer.slides
+              : (previous?.slides ?? fromServer.slides),
+          questions:
+            section === "questions"
+              ? fromServer.questions
+              : (previous?.questions ?? fromServer.questions),
+          homework:
+            section === "homework"
+              ? fromServer.homework
+              : (previous?.homework ?? fromServer.homework),
+        });
+      } else {
+        const previous = studioBaselines.current.get(lessonId);
+        studioBaselines.current.set(lessonId, {
+          slides:
+            section === "slides"
+              ? fingerprint
+              : (previous?.slides ?? fingerprint),
+          questions:
+            section === "questions"
+              ? fingerprint
+              : (previous?.questions ?? fingerprint),
+          homework:
+            section === "homework"
+              ? fingerprint
+              : (previous?.homework ?? fingerprint),
+        });
+      }
+      setBaselineVersion((value) => value + 1);
+      setSavedFlashSection(section);
+      savedFlashTimer.current = window.setTimeout(() => {
+        setSavedFlashSection((currentSection) =>
+          currentSection === section ? null : currentSection,
+        );
+        savedFlashTimer.current = null;
+      }, 1800);
+    } catch {
+      setStudioNotice("Network error while saving edits");
+    } finally {
+      setSavingSection(null);
+    }
+  };
+
   const updatePlanBlock = (
     blockId: string,
     patch: Partial<LessonPlanBlock>,
@@ -360,13 +600,103 @@ const LessonStudioContent = (): ReactElement => {
     patchWorkspaceRemote(activeWorkspace.id, { planBlocks });
   };
 
+  const replacePlanBlocks = (planBlocks: LessonPlanBlock[]): void => {
+    if (!activeWorkspace || activeWorkspace.isSample) return;
+    patchWorkspaceRemote(activeWorkspace.id, { planBlocks });
+  };
+
+  const updateLessonTitle = (title: string): void => {
+    if (!activeWorkspace || activeWorkspace.isSample) return;
+    patchWorkspaceRemote(activeWorkspace.id, { title });
+  };
+
+  useEffect(() => {
+    setWorkflowOverride(null);
+  }, [activeLessonId]);
+
+  useEffect(() => {
+    if (!activeLessonId) return;
+    const lesson = lessonsRef.current.find((item) => item.id === activeLessonId);
+    if (!lesson) return;
+    if (studioBaselines.current.has(lesson.id)) return;
+    const hasMaterials =
+      (lesson.slides?.length ?? 0) > 0 ||
+      (lesson.questions?.length ?? 0) > 0 ||
+      (lesson.homework?.length ?? 0) > 0;
+    if (!hasMaterials) return;
+    studioBaselines.current.set(lesson.id, snapshotStudioBaseline(lesson));
+    setBaselineVersion((value) => value + 1);
+  }, [
+    activeLessonId,
+    activeWorkspace?.slides?.length,
+    activeWorkspace?.questions?.length,
+    activeWorkspace?.homework?.length,
+  ]);
+
+  const studioBaseline = activeWorkspace
+    ? studioBaselines.current.get(activeWorkspace.id)
+    : undefined;
+  void baselineVersion;
+
+  const slidesDirty = Boolean(
+    activeWorkspace &&
+      studioBaseline &&
+      JSON.stringify(activeWorkspace.slides ?? []) !== studioBaseline.slides,
+  );
+  const questionsDirty = Boolean(
+    activeWorkspace &&
+      studioBaseline &&
+      JSON.stringify(activeWorkspace.questions ?? []) !==
+        studioBaseline.questions,
+  );
+  const homeworkDirty = Boolean(
+    activeWorkspace &&
+      studioBaseline &&
+      JSON.stringify(activeWorkspace.homework ?? []) !==
+        studioBaseline.homework,
+  );
+  const studioHasUnsavedEdits =
+    slidesDirty || questionsDirty || homeworkDirty;
+
+  useEffect(() => {
+    if (!studioHasUnsavedEdits) return undefined;
+    const warn = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => {
+      window.removeEventListener("beforeunload", warn);
+    };
+  }, [studioHasUnsavedEdits]);
+
+  useEffect(() => {
+    return () => {
+      if (savedFlashTimer.current) {
+        window.clearTimeout(savedFlashTimer.current);
+      }
+    };
+  }, []);
+
   const toggleWorkspaceDeliverable = (
-    key: keyof LessonDeliverableFlags,
+    key: "slides" | "kahootTest" | "homework",
   ): void => {
     if (!activeWorkspace || activeWorkspace.isSample) return;
-    const deliverables = {
+    const deliverables: LessonDeliverableFlags = {
       ...activeWorkspace.deliverables,
       [key]: !activeWorkspace.deliverables[key],
+    };
+    patchWorkspaceRemote(activeWorkspace.id, { deliverables });
+  };
+
+  const updateWorkspaceDeliverableCount = (
+    key: "slideCount" | "quizCount" | "homeworkCount",
+    value: number,
+  ): void => {
+    if (!activeWorkspace || activeWorkspace.isSample) return;
+    const deliverables: LessonDeliverableFlags = {
+      ...activeWorkspace.deliverables,
+      [key]: value,
     };
     patchWorkspaceRemote(activeWorkspace.id, { deliverables });
   };
@@ -414,28 +744,44 @@ const LessonStudioContent = (): ReactElement => {
     activeWorkspace?.questions.length,
   ]);
 
-  const currentStage: "setup" | "review_plan" | "studio" = !activeWorkspace
+  const hasStudioMaterials = Boolean(
+    activeWorkspace &&
+      ((activeWorkspace.slides ?? []).length > 0 ||
+        (activeWorkspace.questions ?? []).length > 0 ||
+        (activeWorkspace.homework ?? []).length > 0),
+  );
+
+  void studioOpenedTick;
+
+  const derivedStage: StudioWorkflowStage = !activeWorkspace
     ? "setup"
     : activeWorkspace.stage === "generating_plan"
       ? "setup"
       : activeWorkspace.stage === "generating_materials"
-        ? "review_plan"
+        ? hasStudioMaterials
+          ? isStudioOpened(activeWorkspace.id)
+            ? "studio"
+            : "preview"
+          : "review_plan"
         : activeWorkspace.stage === "failed"
           ? activeWorkspace.planBlocks.length > 0
-            ? "review_plan"
+            ? hasStudioMaterials
+              ? isStudioOpened(activeWorkspace.id)
+                ? "studio"
+                : "preview"
+              : "review_plan"
             : "setup"
           : activeWorkspace.stage === "review_plan"
             ? "review_plan"
-            : "studio";
+            : hasStudioMaterials
+              ? isStudioOpened(activeWorkspace.id)
+                ? "studio"
+                : "preview"
+              : "review_plan";
 
-  const hasStudioMaterials = Boolean(
-    activeWorkspace &&
-      (activeWorkspace.slides.length > 0 ||
-        activeWorkspace.questions.length > 0 ||
-        activeWorkspace.homework.length > 0),
-  );
+  const currentStage: StudioWorkflowStage = workflowOverride ?? derivedStage;
 
-  const handleJumpStage = (target: "setup" | "review_plan" | "studio"): void => {
+  const handleJumpStage = (target: StudioWorkflowStage): void => {
     if (target === "setup") {
       if (activeWorkspace) {
         setSetupDraft({
@@ -450,12 +796,26 @@ const LessonStudioContent = (): ReactElement => {
           attachments: activeWorkspace.attachments,
         });
       }
+      setWorkflowOverride(null);
       setActiveLessonId(null);
       return;
     }
     if (!activeWorkspace) return;
-    if (target === "studio" && !hasStudioMaterials) return;
+    if (target === "preview" && !hasStudioMaterials) return;
+    if (target === "studio") {
+      if (!hasStudioMaterials) return;
+      markStudioOpened(activeWorkspace.id);
+      setStudioOpenedTick((value) => value + 1);
+    }
+    setWorkflowOverride(target);
     setActiveLessonId(activeWorkspace.id);
+  };
+
+  const openTeachingStudio = (): void => {
+    if (!activeWorkspace) return;
+    markStudioOpened(activeWorkspace.id);
+    setStudioOpenedTick((value) => value + 1);
+    setWorkflowOverride("studio");
   };
 
   const handleSignOut = async (): Promise<void> => {
@@ -471,16 +831,32 @@ const LessonStudioContent = (): ReactElement => {
       activeLessonId={activeLessonId}
       currentStage={currentStage}
       canJumpToPlan={Boolean(activeWorkspace)}
-      canJumpToStudio={hasStudioMaterials}
+      canJumpToPreview={hasStudioMaterials}
+      canJumpToStudio={Boolean(
+        hasStudioMaterials &&
+          (currentStage === "preview" ||
+            currentStage === "studio" ||
+            (activeWorkspace !== null && isStudioOpened(activeWorkspace.id))),
+      )}
       teacherName={teacher?.displayName ?? null}
       onSignOut={() => {
         void handleSignOut();
       }}
-      onStartNew={() => setActiveLessonId(null)}
+      onStartNew={() => {
+        setWorkflowOverride(null);
+        setActiveLessonId(null);
+      }}
       onJumpStage={handleJumpStage}
       onSelectLesson={(id) => {
+        setWorkflowOverride(null);
         setActiveLessonId(id);
-        setStudioTab("slides");
+        setStudioTab("book");
+        void (async () => {
+          const res = await fetch(`/api/lessons/${id}`);
+          if (!res.ok) return;
+          const data = (await res.json()) as { lesson?: LessonWorkspace };
+          if (data.lesson) upsertLesson(data.lesson);
+        })();
       }}
     />
   );
@@ -507,17 +883,26 @@ const LessonStudioContent = (): ReactElement => {
   }
 
   const showSetup =
+    currentStage === "setup" ||
     !activeWorkspace ||
-    activeWorkspace.stage === "generating_plan" ||
-    (activeWorkspace.stage === "failed" && activeWorkspace.planBlocks.length === 0);
+    activeWorkspace.stage === "generating_plan";
 
   const showPlanReview =
-    activeWorkspace &&
-    (activeWorkspace.stage === "review_plan" ||
-      activeWorkspace.stage === "generating_materials" ||
-      (activeWorkspace.stage === "failed" &&
-        activeWorkspace.planBlocks.length > 0 &&
-        !hasStudioMaterials));
+    Boolean(activeWorkspace) &&
+    currentStage === "review_plan" &&
+    (activeWorkspace?.stage === "generating_materials"
+      ? !hasStudioMaterials
+      : true);
+
+  const showPreview =
+    Boolean(activeWorkspace) &&
+    currentStage === "preview" &&
+    hasStudioMaterials;
+
+  const showStudio =
+    Boolean(activeWorkspace) &&
+    currentStage === "studio" &&
+    hasStudioMaterials;
 
   return (
     <ThemeShell title="Lesson Studio" rail={rail}>
@@ -539,6 +924,7 @@ const LessonStudioContent = (): ReactElement => {
             books={books}
             draft={setupDraft}
             generating={generatingPlan || activeWorkspace?.stage === "generating_plan"}
+            unitConfirmed={Boolean(bookIdParam)}
             onChangeDraft={setSetupDraft}
             onGeneratePlan={handleGeneratePlan}
           />
@@ -552,14 +938,25 @@ const LessonStudioContent = (): ReactElement => {
               activeWorkspace.stage === "generating_materials"
             }
             onBackToSetup={() => handleJumpStage("setup")}
+            onUpdateTitle={updateLessonTitle}
             onUpdatePlanBlock={updatePlanBlock}
+            onReplacePlanBlocks={replacePlanBlocks}
             onToggleDeliverable={toggleWorkspaceDeliverable}
+            onUpdateDeliverableCount={updateWorkspaceDeliverableCount}
             onGenerateMaterials={handleGenerateMaterials}
           />
         </div>
-      ) : activeWorkspace ? (
+      ) : showPreview && activeWorkspace ? (
+        <div key={`stage-preview-${activeWorkspace.id}`} className="oku-stage-enter">
+          <LessonPreviewView
+            workspace={activeWorkspace}
+            onBackToPlan={() => handleJumpStage("review_plan")}
+            onOpenStudio={openTeachingStudio}
+          />
+        </div>
+      ) : showStudio && activeWorkspace ? (
         <div key={`stage-studio-${activeWorkspace.id}`} className="oku-stage-enter">
-          <header className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--border-hairline)] pb-5">
+          <header className="flex flex-col gap-4 border-b border-[var(--border-hairline)] pb-5 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
                 <h2 className="break-words text-2xl font-bold tracking-[-0.02em] sm:text-3xl">
@@ -586,13 +983,13 @@ const LessonStudioContent = (): ReactElement => {
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
               {activeWorkspace.questions.length > 0 ? (
                 <Link
                   href={`/play/${activeWorkspace.shareCode}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className={buttonClasses({ variant: "ghost" })}
+                  className={`${buttonClasses({ variant: "ghost" })} w-full justify-center sm:w-auto`}
                 >
                   <ExternalLinkIcon />
                   Student quiz
@@ -601,7 +998,7 @@ const LessonStudioContent = (): ReactElement => {
               ) : null}
 
               {activeWorkspace.slides.length > 0 ? (
-                <Button onClick={() => openPresenter(0)}>
+                <Button className="w-full sm:w-auto" onClick={() => openPresenter(0)}>
                   <PlayIcon />
                   Start teaching
                 </Button>
@@ -612,9 +1009,9 @@ const LessonStudioContent = (): ReactElement => {
           <div
             role="tablist"
             aria-label="Lesson materials"
-            className="mt-5 flex flex-wrap gap-2 border-b border-[var(--border-hairline)] pb-3"
+            className="-mx-4 mt-5 flex gap-2 overflow-x-auto border-b border-[var(--border-hairline)] px-4 pb-3 sm:mx-0 sm:px-0"
             onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
-              const order: StudioTab[] = [];
+              const order: StudioTab[] = ["book"];
               if (activeWorkspace.slides.length > 0) order.push("slides");
               order.push("plan");
               if (activeWorkspace.questions.length > 0) order.push("kahoot");
@@ -626,13 +1023,32 @@ const LessonStudioContent = (): ReactElement => {
               event.preventDefault();
               const delta = event.key === "ArrowRight" ? 1 : -1;
               const next =
-                order[(current + delta + order.length) % order.length] ?? "plan";
+                order[(current + delta + order.length) % order.length] ?? "book";
               setStudioTab(next);
               window.requestAnimationFrame(() => {
                 document.getElementById(`studio-tab-${next}`)?.focus();
               });
             }}
           >
+            <button
+              id="studio-tab-book"
+              role="tab"
+              type="button"
+              aria-selected={studioTab === "book"}
+              aria-controls="studio-panel"
+              tabIndex={studioTab === "book" ? 0 : -1}
+              onClick={() => setStudioTab("book")}
+              className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-[var(--rounded-xs)] border px-3.5 py-2 text-sm font-semibold transition-colors ${
+                studioTab === "book"
+                  ? "border-transparent bg-[var(--accent-secondary)] text-[var(--on-accent-secondary)]"
+                  : "border-[var(--border-hairline)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+              }`}
+            >
+              <BookOpenIcon />
+              <span className="sm:hidden">Book</span>
+              <span className="hidden sm:inline">Textbook</span>
+            </button>
+
             {activeWorkspace.slides.length > 0 ? (
               <button
                 id="studio-tab-slides"
@@ -642,14 +1058,18 @@ const LessonStudioContent = (): ReactElement => {
                 aria-controls="studio-panel"
                 tabIndex={studioTab === "slides" ? 0 : -1}
                 onClick={() => setStudioTab("slides")}
-                className={`inline-flex min-h-[44px] items-center gap-2 rounded-[var(--rounded-xs)] border px-3.5 py-2 text-sm font-semibold transition-colors ${
+                className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-[var(--rounded-xs)] border px-3.5 py-2 text-sm font-semibold transition-colors ${
                   studioTab === "slides"
                     ? "border-transparent bg-[var(--accent-secondary)] text-[var(--on-accent-secondary)]"
                     : "border-[var(--border-hairline)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                 }`}
               >
                 <SlidesIcon />
-                Slides &amp; uploads ({activeWorkspace.slides.length})
+                <span className="sm:hidden">Slides</span>
+                <span className="hidden sm:inline">Slides &amp; uploads</span>
+                <span className="font-[family-name:var(--font-mono)] tabular-nums">
+                  {activeWorkspace.slides.length}
+                </span>
               </button>
             ) : null}
 
@@ -661,14 +1081,18 @@ const LessonStudioContent = (): ReactElement => {
               aria-controls="studio-panel"
               tabIndex={studioTab === "plan" ? 0 : -1}
               onClick={() => setStudioTab("plan")}
-              className={`inline-flex min-h-[44px] items-center gap-2 rounded-[var(--rounded-xs)] border px-3.5 py-2 text-sm font-semibold transition-colors ${
+              className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-[var(--rounded-xs)] border px-3.5 py-2 text-sm font-semibold transition-colors ${
                 studioTab === "plan"
                   ? "border-transparent bg-[var(--accent-secondary)] text-[var(--on-accent-secondary)]"
                   : "border-[var(--border-hairline)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
               }`}
             >
               <DocumentIcon />
-              Lesson plan ({activeWorkspace.planBlocks.length})
+              <span className="sm:hidden">Plan</span>
+              <span className="hidden sm:inline">Lesson plan</span>
+              <span className="font-[family-name:var(--font-mono)] tabular-nums">
+                {activeWorkspace.planBlocks.length}
+              </span>
             </button>
 
             {activeWorkspace.questions.length > 0 ? (
@@ -680,15 +1104,18 @@ const LessonStudioContent = (): ReactElement => {
                 aria-controls="studio-panel"
                 tabIndex={studioTab === "kahoot" ? 0 : -1}
                 onClick={() => setStudioTab("kahoot")}
-                className={`inline-flex min-h-[44px] items-center gap-2 rounded-[var(--rounded-xs)] border px-3.5 py-2 text-sm font-semibold transition-colors ${
+                className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-[var(--rounded-xs)] border px-3.5 py-2 text-sm font-semibold transition-colors ${
                   studioTab === "kahoot"
                     ? "border-transparent bg-[var(--accent-secondary)] text-[var(--on-accent-secondary)]"
                     : "border-[var(--border-hairline)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                 }`}
               >
                 <TrophyIcon />
-                Kahoot test ({activeWorkspace.questions.length} ·{" "}
-                {activeWorkspace.leaderboard.length} results)
+                <span className="sm:hidden">Quiz</span>
+                <span className="hidden sm:inline">Student quiz</span>
+                <span className="font-[family-name:var(--font-mono)] tabular-nums">
+                  {activeWorkspace.questions.length}
+                </span>
               </button>
             ) : null}
 
@@ -701,13 +1128,16 @@ const LessonStudioContent = (): ReactElement => {
                 aria-controls="studio-panel"
                 tabIndex={studioTab === "homework" ? 0 : -1}
                 onClick={() => setStudioTab("homework")}
-                className={`inline-flex min-h-[44px] items-center gap-2 rounded-[var(--rounded-xs)] border px-3.5 py-2 text-sm font-semibold transition-colors ${
+                className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-[var(--rounded-xs)] border px-3.5 py-2 text-sm font-semibold transition-colors ${
                   studioTab === "homework"
                     ? "border-transparent bg-[var(--accent-secondary)] text-[var(--on-accent-secondary)]"
                     : "border-[var(--border-hairline)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                 }`}
               >
-                Homework ({activeWorkspace.homework.length})
+                Homework
+                <span className="font-[family-name:var(--font-mono)] tabular-nums">
+                  {activeWorkspace.homework.length}
+                </span>
               </button>
             ) : null}
           </div>
@@ -718,12 +1148,23 @@ const LessonStudioContent = (): ReactElement => {
             aria-labelledby={`studio-tab-${studioTab}`}
             className="mt-6"
           >
+            {studioTab === "book" ? (
+              <LessonBookPanel lessonId={activeWorkspace.id} />
+            ) : null}
+
             {studioTab === "slides" && activeWorkspace.slides.length > 0 ? (
               <LessonSlidesPanel
                 slides={activeWorkspace.slides}
                 shareCode={activeWorkspace.shareCode}
+                readOnly={activeWorkspace.isSample}
+                dirty={slidesDirty}
+                saving={savingSection === "slides"}
+                justSaved={savedFlashSection === "slides"}
                 onChangeSlides={(slides) =>
-                  patchWorkspaceRemote(activeWorkspace.id, { slides })
+                  patchWorkspace(activeWorkspace.id, { slides })
+                }
+                onSave={() =>
+                  void saveWorkspaceSection(activeWorkspace.id, "slides")
                 }
                 onStartTeaching={openPresenter}
               />
@@ -761,18 +1202,34 @@ const LessonStudioContent = (): ReactElement => {
                 shareCode={activeWorkspace.shareCode}
                 questions={activeWorkspace.questions}
                 leaderboard={activeWorkspace.leaderboard}
+                readOnly={activeWorkspace.isSample}
+                dirty={questionsDirty}
+                saving={savingSection === "questions"}
+                justSaved={savedFlashSection === "questions"}
                 onChangeQuestions={(questions) =>
-                  patchWorkspaceRemote(activeWorkspace.id, { questions })
+                  patchWorkspace(activeWorkspace.id, { questions })
+                }
+                onSave={() =>
+                  void saveWorkspaceSection(activeWorkspace.id, "questions")
                 }
               />
             ) : null}
 
             {studioTab === "homework" && activeWorkspace.homework.length > 0 ? (
               <LessonHomeworkPanel
+                shareCode={activeWorkspace.shareCode}
                 lessonTitle={activeWorkspace.title}
                 homework={activeWorkspace.homework}
+                attempts={activeWorkspace.homeworkLeaderboard}
+                readOnly={activeWorkspace.isSample}
+                dirty={homeworkDirty}
+                saving={savingSection === "homework"}
+                justSaved={savedFlashSection === "homework"}
                 onChangeHomework={(homework) =>
-                  patchWorkspaceRemote(activeWorkspace.id, { homework })
+                  patchWorkspace(activeWorkspace.id, { homework })
+                }
+                onSave={() =>
+                  void saveWorkspaceSection(activeWorkspace.id, "homework")
                 }
               />
             ) : null}

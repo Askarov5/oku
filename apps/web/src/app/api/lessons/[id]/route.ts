@@ -1,12 +1,10 @@
-import { lessons } from "@oku/db";
-import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
 import {
+  applyLessonPatch,
   bundleToWorkspace,
   hasActiveJob,
+  loadLessonAccess,
   loadLessonBundle,
-  replaceQuestions,
   teacherCanAccess,
   teacherCanMutate,
   type PatchLessonBody,
@@ -40,45 +38,38 @@ export const PATCH = async (
   if ("error" in auth) return auth.error;
 
   const { id } = await context.params;
-  const bundle = await loadLessonBundle(id);
-  if (!bundle || !teacherCanMutate(bundle.lesson, auth.user.id)) {
+  const body = (await request.json()) as PatchLessonBody;
+  const [access, busy] = await Promise.all([
+    loadLessonAccess(id),
+    hasActiveJob(id),
+  ]);
+  if (!access || !teacherCanMutate(access, auth.user.id)) {
     return NextResponse.json(
-      { error: bundle?.lesson.isSample ? "Sample lesson is read-only" : "Lesson not found" },
-      { status: bundle ? 403 : 404 },
+      {
+        error: access?.isSample
+          ? "Sample lesson is read-only"
+          : "Lesson not found",
+      },
+      { status: access ? 403 : 404 },
     );
   }
 
-  if (await hasActiveJob(id)) {
+  if (busy) {
     return NextResponse.json(
       { error: "Wait for the current generation job to finish" },
       { status: 409 },
     );
   }
 
-  const body = (await request.json()) as PatchLessonBody;
-  const db = getDb();
-  await db
-    .update(lessons)
-    .set({
-      title: body.title ?? bundle.lesson.title,
-      planBlocks: body.planBlocks ?? bundle.lesson.planBlocks,
-      slides: body.slides ?? bundle.lesson.slides,
-      homework: body.homework ?? bundle.lesson.homework,
-      deliverables: body.deliverables ?? bundle.lesson.deliverables,
-      creativeAngle: body.creativeAngle ?? bundle.lesson.creativeAngle,
-      audience: body.audience ?? bundle.lesson.audience,
-      amountOfLessons: body.amountOfLessons ?? bundle.lesson.amountOfLessons,
-      minutesPerLesson: body.minutesPerLesson ?? bundle.lesson.minutesPerLesson,
-      updatedAt: new Date(),
-    })
-    .where(eq(lessons.id, id));
+  await applyLessonPatch(id, body);
 
-  if (body.questions) {
-    await replaceQuestions(id, body.questions);
+  // Quiz rows can receive new ids. Slide and plan edits are already on screen.
+  if (body.questions !== undefined || body.homework !== undefined) {
+    const updated = await loadLessonBundle(id);
+    return NextResponse.json({
+      lesson: updated ? bundleToWorkspace(updated) : null,
+    });
   }
 
-  const updated = await loadLessonBundle(id);
-  return NextResponse.json({
-    lesson: updated ? bundleToWorkspace(updated) : null,
-  });
+  return NextResponse.json({ ok: true });
 };

@@ -80,7 +80,7 @@ export const AccountAuthForm = ({
         <button
           type="button"
           onClick={() => setMode("login")}
-          className={`rounded-[var(--rounded-xs)] border px-3 py-1.5 text-sm font-semibold ${
+          className={`min-h-11 flex-1 rounded-[var(--rounded-xs)] border px-3 py-2 text-sm font-semibold ${
             mode === "login"
               ? "border-transparent bg-[var(--accent-secondary)] text-[var(--on-accent-secondary)]"
               : "border-[var(--border-hairline)]"
@@ -91,7 +91,7 @@ export const AccountAuthForm = ({
         <button
           type="button"
           onClick={() => setMode("register")}
-          className={`rounded-[var(--rounded-xs)] border px-3 py-1.5 text-sm font-semibold ${
+          className={`min-h-11 flex-1 rounded-[var(--rounded-xs)] border px-3 py-2 text-sm font-semibold ${
             mode === "register"
               ? "border-transparent bg-[var(--accent-secondary)] text-[var(--on-accent-secondary)]"
               : "border-[var(--border-hairline)]"

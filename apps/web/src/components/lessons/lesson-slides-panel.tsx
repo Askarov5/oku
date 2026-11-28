@@ -22,7 +22,12 @@ import type { LessonSlide } from "@/lib/lesson-studio";
 interface LessonSlidesPanelProps {
   slides: LessonSlide[];
   shareCode: string;
+  readOnly?: boolean;
+  dirty?: boolean;
+  saving?: boolean;
+  justSaved?: boolean;
   onChangeSlides: (slides: LessonSlide[]) => void;
+  onSave?: () => void;
   onStartTeaching: (startIndex: number) => void;
 }
 
@@ -37,11 +42,22 @@ const readImageDataUrl = (file: File): Promise<string> =>
 export const LessonSlidesPanel = ({
   slides,
   shareCode,
+  readOnly = false,
+  dirty = false,
+  saving = false,
+  justSaved = false,
   onChangeSlides,
+  onSave,
   onStartTeaching,
 }: LessonSlidesPanelProps): ReactElement => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const uploadRef = useRef<HTMLInputElement | null>(null);
+  const canSave = Boolean(onSave) && !readOnly && dirty && !saving;
+  const saveLabel = saving
+    ? "Saving…"
+    : justSaved && !dirty
+      ? "Saved"
+      : "Save slides";
 
   const safeIndex = Math.min(Math.max(0, selectedIndex), Math.max(0, slides.length - 1));
   const activeSlide = slides[safeIndex] ?? null;
@@ -140,8 +156,8 @@ export const LessonSlidesPanel = ({
 
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-      {/* Left Filmstrip: AI slides + Teacher-uploaded images/slides + Quiz Launch */}
-      <div className="rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)]">
+      {/* Filmstrip: a sideways scroller on a phone, a column beside the stage on a wide screen. */}
+      <div className="order-2 rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)] lg:order-1">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-hairline)] p-3">
           <input
             ref={uploadRef}
@@ -155,6 +171,7 @@ export const LessonSlidesPanel = ({
             variant="secondary"
             size="sm"
             className="flex-1"
+            disabled={readOnly}
             onClick={() => uploadRef.current?.click()}
           >
             <UploadIcon />
@@ -165,21 +182,25 @@ export const LessonSlidesPanel = ({
             size="icon"
             aria-label="Add blank slide"
             title="Add blank slide"
+            disabled={readOnly}
             onClick={addBlankSlide}
           >
             <PlusIcon />
           </Button>
         </div>
 
-        <ol className="divide-y divide-[var(--border-hairline)]">
+        <ol className="flex snap-x snap-mandatory overflow-x-auto lg:block lg:snap-none lg:divide-y lg:divide-[var(--border-hairline)] lg:overflow-visible">
           {slides.map((slide, idx) => {
             const active = idx === safeIndex;
             return (
-              <li key={slide.id}>
+              <li
+                key={slide.id}
+                className="w-[min(12.5rem,72%)] shrink-0 snap-start border-r border-[var(--border-hairline)] last:border-r-0 lg:w-auto lg:border-r-0"
+              >
                 <button
                   type="button"
                   onClick={() => setSelectedIndex(idx)}
-                  className={`flex w-full items-start gap-2.5 px-3 py-3 text-left text-sm transition-colors coarse:min-h-[44px] ${
+                  className={`flex min-h-11 w-full items-start gap-2.5 px-3 py-3 text-left text-sm transition-colors ${
                     active
                       ? "bg-[var(--bg-hover)] font-semibold text-[var(--text-primary)]"
                       : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
@@ -194,7 +215,7 @@ export const LessonSlidesPanel = ({
                     </span>
                     <span className="mt-1 block font-[family-name:var(--font-mono)] text-xs text-[var(--text-secondary)]">
                       {slide.kind === "quiz_launch"
-                        ? "Kahoot launch"
+                        ? "Quiz launch"
                         : slide.kind === "uploaded_media"
                           ? "Uploaded"
                           : slide.pageRef ?? "AI slide"}
@@ -209,7 +230,7 @@ export const LessonSlidesPanel = ({
 
       {/* Right Workspace: 16:9 Classroom Stage Preview + Inline Slide Editor */}
       {activeSlide ? (
-        <div className="grid gap-5">
+        <div className="order-1 grid gap-5 lg:order-2">
           {/* 16:9 Atlas Slide Canvas */}
           <div className="flex flex-col justify-between border border-[var(--border-hairline)] border-t-4 border-t-[var(--accent-primary)] bg-[var(--bg-surface)] p-6 sm:aspect-video sm:p-9">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-hairline)] pb-3">
@@ -222,7 +243,7 @@ export const LessonSlidesPanel = ({
                   variant="ghost"
                   size="icon"
                   aria-label="Move slide up"
-                  disabled={safeIndex === 0}
+                  disabled={readOnly || safeIndex === 0}
                   onClick={() => moveSlide(-1)}
                 >
                   <ChevronUpIcon />
@@ -231,7 +252,7 @@ export const LessonSlidesPanel = ({
                   variant="ghost"
                   size="icon"
                   aria-label="Move slide down"
-                  disabled={safeIndex === slides.length - 1}
+                  disabled={readOnly || safeIndex === slides.length - 1}
                   onClick={() => moveSlide(1)}
                 >
                   <ChevronDownIcon />
@@ -240,7 +261,7 @@ export const LessonSlidesPanel = ({
                   variant="ghost"
                   size="icon"
                   aria-label="Delete slide"
-                  disabled={slides.length <= 1}
+                  disabled={readOnly || slides.length <= 1}
                   onClick={() => deleteSlide(safeIndex)}
                 >
                   <TrashIcon />
@@ -339,7 +360,21 @@ export const LessonSlidesPanel = ({
 
           {/* Inline Slide Content & Speaker Notes Editor */}
           <div className="rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)] p-5">
-            <h4 className="text-sm font-semibold">Edit slide &amp; speaker notes</h4>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h4 className="text-sm font-semibold">
+                Edit slide &amp; speaker notes
+              </h4>
+              {onSave ? (
+                <Button
+                  variant={dirty ? "primary" : "secondary"}
+                  size="sm"
+                  disabled={!canSave}
+                  onClick={onSave}
+                >
+                  {saveLabel}
+                </Button>
+              ) : null}
+            </div>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <label
@@ -352,6 +387,7 @@ export const LessonSlidesPanel = ({
                   id="slide-title-input"
                   type="text"
                   value={activeSlide.title}
+                  disabled={readOnly}
                   onChange={(event) =>
                     updateSlide({ title: event.target.value })
                   }
@@ -370,6 +406,7 @@ export const LessonSlidesPanel = ({
                   id="slide-bullets-input"
                   rows={Math.max(5, activeSlide.bullets.length + 2)}
                   value={activeSlide.bullets.join("\n")}
+                  disabled={readOnly}
                   onChange={(event) =>
                     updateSlide({
                       bullets: event.target.value.split("\n"),
@@ -390,6 +427,7 @@ export const LessonSlidesPanel = ({
                   id="slide-notes-input"
                   rows={Math.max(5, activeSlide.bullets.length + 2)}
                   value={activeSlide.speakerNotes}
+                  disabled={readOnly}
                   onChange={(event) =>
                     updateSlide({ speakerNotes: event.target.value })
                   }

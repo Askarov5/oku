@@ -65,28 +65,43 @@ Textbook excerpt:
 """
 
 
+def clamp_deliverable_count(value: Any, fallback: int, *, lo: int = 1, hi: int = 10) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        n = fallback
+    return max(lo, min(hi, n))
+
+
+def resolve_slide_count(deliverables: dict[str, Any]) -> int:
+    return clamp_deliverable_count(deliverables.get("slideCount"), 4)
+
+
+def resolve_quiz_count(deliverables: dict[str, Any]) -> int:
+    return clamp_deliverable_count(deliverables.get("quizCount"), 4)
+
+
+def resolve_homework_count(deliverables: dict[str, Any]) -> int:
+    return clamp_deliverable_count(deliverables.get("homeworkCount"), 6)
+
+
 def materials_prompt(
     grounding: dict[str, Any],
     plan_blocks: list[dict[str, Any]],
-    deliverables: dict[str, bool],
+    deliverables: dict[str, Any],
     share_code: str,
 ) -> str:
     language = grounding.get("language") or "en"
-    wanted = [
-        name
-        for name, on in (
-            ("slides", deliverables.get("slides")),
-            ("kahootTest", deliverables.get("kahootTest")),
-            ("homework", deliverables.get("homework")),
-        )
-        if on
-    ]
-    return f"""You are generating classroom teaching materials from an approved lesson plan.
+    include_slides = bool(deliverables.get("slides"))
+    include_quiz_launch = bool(deliverables.get("kahootTest"))
+    slide_count = resolve_slide_count(deliverables)
+    return f"""You are generating classroom teaching slides from an approved lesson plan.
 
 Write everything in {_lang_label(language)}.
 Stay faithful to the plan and the textbook unit. The creative angle only frames examples.
+Quiz questions are generated separately — do not invent questions here.
 
-Return ONLY a JSON object with this shape (omit unused keys when that deliverable is off):
+Return ONLY a JSON object:
 {{
   "slides": [
     {{
@@ -101,38 +116,12 @@ Return ONLY a JSON object with this shape (omit unused keys when that deliverabl
       "imageCaption": null,
       "speakerNotes": "teacher cue"
     }}
-  ],
-  "questions": [
-    {{
-      "id": "q-1",
-      "prompt": "question text",
-      "scenarioNote": "hint or null",
-      "timeLimitSec": 20,
-      "points": 1000,
-      "choices": [
-        {{"id": "q-1-a", "shape": "triangle", "text": "A", "isCorrect": true}},
-        {{"id": "q-1-b", "shape": "diamond", "text": "B", "isCorrect": false}},
-        {{"id": "q-1-c", "shape": "circle", "text": "C", "isCorrect": false}},
-        {{"id": "q-1-d", "shape": "square", "text": "D", "isCorrect": false}}
-      ],
-      "explanation": "why the correct answer holds"
-    }}
-  ],
-  "homework": [
-    {{
-      "id": "hw-1",
-      "title": "task title",
-      "prompt": "student task",
-      "expectedMinutes": 8,
-      "answerGuide": "teacher answer key"
-    }}
   ]
 }}
 
-Generate only these deliverables: {', '.join(wanted) or 'none'}.
-If slides are on: produce 3–5 teaching slides, then a final slide with kind "quiz_launch" that tells students to open /play/{share_code}.
-If kahootTest is on: produce 4 multiple-choice questions with exactly one isCorrect=true and shapes triangle, diamond, circle, square in that order.
-If homework is on: produce 2–3 practice tasks with answer guides.
+Slides requested: {'yes' if include_slides else 'no — return an empty slides array'}.
+If slides are on: produce exactly {slide_count} teaching slides (kind concept, worked_example, or uploaded_media). Do not exceed {slide_count} teaching slides.
+If a quiz launch is requested ({'yes' if include_quiz_launch else 'no'}): append a final slide with kind "quiz_launch" that tells students to open /play/{share_code}. The quiz_launch slide does not count toward the {slide_count} teaching slides.
 
 Approved plan:
 {plan_blocks}

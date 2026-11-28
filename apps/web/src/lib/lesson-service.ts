@@ -6,7 +6,6 @@ import {
   quizAttemptItems,
   quizAttempts,
   quizQuestions,
-  type HomeworkItemJson,
   type Lesson,
   type LessonAsset,
   type LessonDeliverablesJson,
@@ -14,15 +13,16 @@ import {
   type LessonJob,
   type LessonPlanBlockJson,
   type LessonSlideJson,
+  type QuizAnswerKeyJson,
   type QuizAttempt,
+  type QuizPlacement,
   type QuizQuestion,
+  type QuizSpecJson,
 } from "@oku/db";
 import { and, asc, desc, eq, or } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { getDb } from "./db";
 import type {
-  HomeworkItem,
-  KahootQuestion,
   LessonPlanBlock,
   LessonSlide,
   LessonStage,
@@ -33,8 +33,23 @@ import type {
   StudioUnitOption,
 } from "./lesson-studio";
 import { createPrebuiltSoccerLesson, gradeFromRatio } from "./lesson-studio";
+import {
+  buildReveal,
+  grade,
+  mergeQuizConfig,
+  rowToQuizItem,
+  splitItemForStorage,
+  type QuizConfig,
+  type QuizItem,
+  type QuizItemKind,
+  type QuizResponse,
+  type QuizReveal,
+  type QuizResult,
+} from "./quiz";
 
 const MARKDOWN_CAP = 12_000;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const SAMPLE_SHARE_CODE = "ek-soccer-9a";
 
@@ -67,27 +82,25 @@ const assetToAttachment = (asset: LessonAsset): StudioAttachment => ({
   includeAsSlide: asset.includeAsSlide,
 });
 
-const questionToKahoot = (question: QuizQuestion): KahootQuestion => ({
-  id: question.id,
-  prompt: question.prompt,
-  scenarioNote: question.scenarioNote,
-  timeLimitSec: question.timeLimitSec,
-  points: question.points,
-  choices: question.choices.map((choice) => ({
-    ...choice,
-    isCorrect: choice.id === question.correctChoiceId,
-  })),
-  explanation: question.explanation,
-});
-
-const publicQuestion = (question: QuizQuestion): KahootQuestion => ({
-  ...questionToKahoot(question),
-  choices: question.choices.map((choice) => ({
-    ...choice,
-    isCorrect: false,
-  })),
-  explanation: "",
-});
+const questionRowToItem = (
+  question: QuizQuestion,
+  hideAnswers?: boolean,
+): QuizItem =>
+  rowToQuizItem(
+    {
+      id: question.id,
+      kind: question.kind as QuizItemKind,
+      prompt: question.prompt,
+      scenarioNote: question.scenarioNote,
+      explanation: question.explanation,
+      timeLimitSec: question.timeLimitSec,
+      points: question.points,
+      requireExplanation: question.requireExplanation,
+      spec: question.spec as QuizSpecJson,
+      answerKey: question.answerKey as QuizAnswerKeyJson,
+    },
+    { hideAnswers },
+  );
 
 export const attemptToLeaderboard = (
   attempt: QuizAttempt,
@@ -172,6 +185,29 @@ export const loadLessonBundle = async (
   };
 };
 
+/** Ownership check for a write. Skips slides, grounding, questions, and attempts. */
+export interface LessonAccess {
+  id: string;
+  teacherId: string | null;
+  isSample: boolean;
+}
+
+export const loadLessonAccess = async (
+  lessonId: string,
+): Promise<LessonAccess | null> => {
+  const db = getDb();
+  const [lesson] = await db
+    .select({
+      id: lessons.id,
+      teacherId: lessons.teacherId,
+      isSample: lessons.isSample,
+    })
+    .from(lessons)
+    .where(eq(lessons.id, lessonId))
+    .limit(1);
+  return lesson ?? null;
+};
+
 export const loadLessonByShareCode = async (
   shareCode: string,
 ): Promise<LessonBundle | null> => {
@@ -187,7 +223,7 @@ export const loadLessonByShareCode = async (
 
 export const bundleToWorkspace = (
   bundle: LessonBundle,
-  options?: { hideAnswers?: boolean },
+  options?: { hideAnswers?: boolean; placement?: QuizPlacement },
 ): LessonWorkspace & {
   jobStatus?: string | null;
   jobError?: string | null;
@@ -197,10 +233,19 @@ export const bundleToWorkspace = (
   const sampleLeaderboard = lesson.isSample
     ? createPrebuiltSoccerLesson().leaderboard.filter((row) => row.isSample)
     : [];
-  const liveLeaderboard = latestAttemptsLeaderboard(attempts);
-  const mappedQuestions = options?.hideAnswers
-    ? questions.map(publicQuestion)
-    : questions.map(questionToKahoot);
+  const liveAttempts = attempts.filter((row) => row.placement === "live");
+  const homeworkAttempts = attempts.filter(
+    (row) => row.placement === "homework",
+  );
+  const liveLeaderboard = latestAttemptsLeaderboard(liveAttempts);
+  const homeworkLeaderboard = latestAttemptsLeaderboard(homeworkAttempts);
+
+  const liveQuestions = questions
+    .filter((row) => row.placement === "live")
+    .map((row) => questionRowToItem(row, options?.hideAnswers));
+  const homeworkQuestions = questions
+    .filter((row) => row.placement === "homework")
+    .map((row) => questionRowToItem(row, options?.hideAnswers));
 
   return {
     id: lesson.id,
@@ -222,11 +267,12 @@ export const bundleToWorkspace = (
     attachments: assets.map(assetToAttachment),
     planBlocks: lesson.planBlocks as LessonPlanBlock[],
     slides: lesson.slides as LessonSlide[],
-    questions: mappedQuestions,
-    homework: lesson.homework as HomeworkItem[],
+    questions: liveQuestions,
+    homework: homeworkQuestions,
     leaderboard: [...liveLeaderboard, ...sampleLeaderboard].sort(
       (left, right) => right.scorePoints - left.scorePoints,
     ),
+    homeworkLeaderboard,
     updatedAt: lesson.updatedAt.toISOString(),
     jobStatus: latestJob?.status ?? null,
     jobError: latestJob?.error ?? null,
@@ -261,7 +307,7 @@ export const teacherCanAccess = (
 };
 
 export const teacherCanMutate = (
-  lesson: Lesson,
+  lesson: { isSample: boolean; teacherId: string | null },
   teacherId: string,
 ): boolean => {
   if (lesson.isSample) return false;
@@ -329,69 +375,33 @@ export const buildGrounding = (input: {
 });
 
 export const scoreAttempt = (input: {
-  questions: QuizQuestion[];
-  answers: Array<{ questionId: string; choiceId: string; elapsedSec: number }>;
-}): {
-  scorePoints: number;
-  correctCount: number;
-  masteryRatio: number;
-  bestStreak: number;
-  durationSec: number;
-  gradeFiveScale: 2 | 3 | 4 | 5;
-  items: Array<{
-    questionId: string;
-    choiceId: string | null;
-    isCorrect: boolean;
-    timeSpentSec: number;
-  }>;
-} => {
-  let scorePoints = 0;
-  let correctCount = 0;
-  let streak = 0;
-  let bestStreak = 0;
-  let durationSec = 0;
-  const byId = new Map(input.questions.map((q) => [q.id, q]));
-  const items = input.questions.map((question) => {
-    const answer = input.answers.find((row) => row.questionId === question.id);
-    const elapsed = Math.max(0, Math.round(answer?.elapsedSec ?? 0));
-    durationSec += elapsed;
-    const isCorrect = answer?.choiceId === question.correctChoiceId;
-    if (isCorrect) {
-      correctCount += 1;
-      streak += 1;
-      bestStreak = Math.max(bestStreak, streak);
-      const speedBonus = Math.max(
-        0,
-        1 - elapsed / Math.max(1, question.timeLimitSec),
-      );
-      scorePoints += Math.round(question.points * (0.5 + 0.5 * speedBonus));
-    } else {
-      streak = 0;
-    }
-    return {
-      questionId: question.id,
-      choiceId: answer?.choiceId ?? null,
-      isCorrect,
-      timeSpentSec: elapsed,
-    };
-  });
-  const total = input.questions.length || 1;
-  const masteryRatio = correctCount / total;
+  questions: QuizItem[];
+  answers: QuizResponse[];
+  config?: Partial<QuizConfig>;
+}): QuizResult & { gradeFiveScale: 2 | 3 | 4 | 5 } => {
+  const scored = grade(input.questions, input.answers, input.config);
   return {
-    scorePoints,
-    correctCount,
-    masteryRatio,
-    bestStreak,
-    durationSec,
-    gradeFiveScale: gradeFromRatio(masteryRatio),
-    items,
+    ...scored,
+    gradeFiveScale: gradeFromRatio(scored.masteryRatio),
   };
 };
+
+export const revealOneResponse = (input: {
+  question: QuizItem;
+  response: QuizResponse;
+  config?: Partial<QuizConfig>;
+}): QuizReveal =>
+  buildReveal({
+    question: input.question,
+    response: input.response,
+    config: mergeQuizConfig(input.config),
+  });
 
 export const insertAttemptBundle = async (input: {
   lesson: Lesson;
   studentId: string;
   displayName: string;
+  placement: QuizPlacement;
   scored: ReturnType<typeof scoreAttempt>;
 }): Promise<{ attemptId: string }> => {
   const db = getDb();
@@ -401,6 +411,7 @@ export const insertAttemptBundle = async (input: {
       lessonId: input.lesson.id,
       studentId: input.studentId,
       displayName: input.displayName,
+      placement: input.placement,
       scorePoints: input.scored.scorePoints,
       correctCount: input.scored.correctCount,
       totalQuestions: input.scored.items.length,
@@ -420,7 +431,7 @@ export const insertAttemptBundle = async (input: {
       input.scored.items.map((item) => ({
         attemptId: attempt.id,
         questionId: item.questionId,
-        choiceId: item.choiceId,
+        response: item.response as unknown as Record<string, unknown>,
         isCorrect: item.isCorrect,
         timeSpentSec: item.timeSpentSec,
       })),
@@ -445,9 +456,9 @@ export type PatchLessonBody = {
   title?: string;
   planBlocks?: LessonPlanBlockJson[];
   slides?: LessonSlideJson[];
-  homework?: HomeworkItemJson[];
+  homework?: QuizItem[];
   deliverables?: LessonDeliverablesJson;
-  questions?: KahootQuestion[];
+  questions?: QuizItem[];
   creativeAngle?: string;
   audience?: string;
   amountOfLessons?: number;
@@ -456,39 +467,83 @@ export type PatchLessonBody = {
 
 export const replaceQuestions = async (
   lessonId: string,
-  questions: KahootQuestion[],
+  questions: QuizItem[],
+  placement: QuizPlacement = "live",
 ): Promise<void> => {
   const db = getDb();
-  await db.delete(quizQuestions).where(eq(quizQuestions.lessonId, lessonId));
+  await db
+    .delete(quizQuestions)
+    .where(
+      and(
+        eq(quizQuestions.lessonId, lessonId),
+        eq(quizQuestions.placement, placement),
+      ),
+    );
   if (questions.length === 0) return;
   await db.insert(quizQuestions).values(
     questions.map((question, orderIndex) => {
-      const correct =
-        question.choices.find((choice) => choice.isCorrect)?.id ??
-        question.choices[0]?.id ??
-        "";
+      const stored = splitItemForStorage(question);
       return {
-        id: question.id.match(
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-        )
-          ? question.id
-          : undefined,
+        id: UUID_RE.test(question.id) ? question.id : undefined,
         lessonId,
         orderIndex,
-        prompt: question.prompt,
-        scenarioNote: question.scenarioNote,
-        choices: question.choices.map(({ id, shape, text }) => ({
-          id,
-          shape,
-          text,
-        })),
-        correctChoiceId: correct,
-        explanation: question.explanation,
-        timeLimitSec: question.timeLimitSec,
-        points: question.points,
+        placement,
+        kind: stored.kind,
+        prompt: stored.prompt,
+        scenarioNote: stored.scenarioNote,
+        requireExplanation: stored.requireExplanation,
+        spec: stored.spec as QuizSpecJson,
+        answerKey: stored.answerKey as QuizAnswerKeyJson,
+        explanation: stored.explanation,
+        timeLimitSec: stored.timeLimitSec,
+        points: stored.points,
       };
     }),
   );
+};
+
+/**
+ * Writes only the fields present on the patch.
+ * Slide text is the `slides` jsonb column; this does not read it back.
+ */
+export const applyLessonPatch = async (
+  lessonId: string,
+  body: PatchLessonBody,
+): Promise<void> => {
+  const db = getDb();
+  const patch: {
+    updatedAt: Date;
+    title?: string;
+    planBlocks?: LessonPlanBlockJson[];
+    slides?: LessonSlideJson[];
+    deliverables?: LessonDeliverablesJson;
+    creativeAngle?: string;
+    audience?: string;
+    amountOfLessons?: number;
+    minutesPerLesson?: number;
+  } = { updatedAt: new Date() };
+
+  if (body.title !== undefined) patch.title = body.title;
+  if (body.planBlocks !== undefined) patch.planBlocks = body.planBlocks;
+  if (body.slides !== undefined) patch.slides = body.slides;
+  if (body.deliverables !== undefined) patch.deliverables = body.deliverables;
+  if (body.creativeAngle !== undefined) patch.creativeAngle = body.creativeAngle;
+  if (body.audience !== undefined) patch.audience = body.audience;
+  if (body.amountOfLessons !== undefined) {
+    patch.amountOfLessons = body.amountOfLessons;
+  }
+  if (body.minutesPerLesson !== undefined) {
+    patch.minutesPerLesson = body.minutesPerLesson;
+  }
+
+  await db.update(lessons).set(patch).where(eq(lessons.id, lessonId));
+
+  if (body.questions !== undefined) {
+    await replaceQuestions(lessonId, body.questions, "live");
+  }
+  if (body.homework !== undefined) {
+    await replaceQuestions(lessonId, body.homework, "homework");
+  }
 };
 
 /** Ensures the sample free-kick lesson exists once (seed only; not the generation path). */
@@ -499,9 +554,38 @@ export const ensureSampleLesson = async (): Promise<void> => {
     .from(lessons)
     .where(eq(lessons.shareCode, SAMPLE_SHARE_CODE))
     .limit(1);
-  if (existing.length > 0) return;
 
   const sample = createPrebuiltSoccerLesson();
+
+  if (existing.length > 0) {
+    const lessonId = existing[0]!.id;
+    const homeworkRows = await db
+      .select({ id: quizQuestions.id })
+      .from(quizQuestions)
+      .where(
+        and(
+          eq(quizQuestions.lessonId, lessonId),
+          eq(quizQuestions.placement, "homework"),
+        ),
+      )
+      .limit(1);
+    // One-time upgrade for samples created before rich quiz items.
+    if (homeworkRows.length === 0) {
+      await db
+        .update(lessons)
+        .set({
+          slides: sample.slides,
+          homework: [],
+          planBlocks: sample.planBlocks,
+          updatedAt: new Date(),
+        })
+        .where(eq(lessons.id, lessonId));
+      await replaceQuestions(lessonId, sample.questions, "live");
+      await replaceQuestions(lessonId, sample.homework, "homework");
+    }
+    return;
+  }
+
   const [row] = await db
     .insert(lessons)
     .values({
@@ -522,7 +606,7 @@ export const ensureSampleLesson = async (): Promise<void> => {
       title: sample.title,
       planBlocks: sample.planBlocks,
       slides: sample.slides,
-      homework: sample.homework,
+      homework: [],
       grounding: null,
       conceptId: null,
       isSample: true,
@@ -532,24 +616,9 @@ export const ensureSampleLesson = async (): Promise<void> => {
   if (!row) return;
 
   if (sample.questions.length > 0) {
-    await db.insert(quizQuestions).values(
-      sample.questions.map((question, orderIndex) => ({
-        lessonId: row.id,
-        orderIndex,
-        prompt: question.prompt,
-        scenarioNote: question.scenarioNote,
-        choices: question.choices.map(({ id, shape, text }) => ({
-          id,
-          shape,
-          text,
-        })),
-        correctChoiceId:
-          question.choices.find((choice) => choice.isCorrect)?.id ??
-          question.choices[0]!.id,
-        explanation: question.explanation,
-        timeLimitSec: question.timeLimitSec,
-        points: question.points,
-      })),
-    );
+    await replaceQuestions(row.id, sample.questions, "live");
+  }
+  if (sample.homework.length > 0) {
+    await replaceQuestions(row.id, sample.homework, "homework");
   }
 };

@@ -280,10 +280,27 @@ export const learningEventTypeEnum = pgEnum("learning_event_type", [
   "quiz_completed",
 ]);
 
+export const quizPlacementEnum = pgEnum("quiz_placement", ["live", "homework"]);
+
+export const quizItemKindEnum = pgEnum("quiz_item_kind", [
+  "multiple_choice",
+  "checkboxes",
+  "true_false",
+  "numeric_range",
+  "matching",
+  "ordering",
+]);
+
 export interface LessonDeliverablesJson {
   slides: boolean;
   kahootTest: boolean;
   homework: boolean;
+  /** Teaching slides to generate (1–10). Quiz-launch slide is extra. */
+  slideCount?: number;
+  /** Live quiz questions to generate (1–10). */
+  quizCount?: number;
+  /** Homework practice items to generate (1–10). */
+  homeworkCount?: number;
 }
 
 export interface LessonPlanBlockJson {
@@ -338,11 +355,41 @@ export interface LessonGroundingJson {
   noteAttachments: string[];
 }
 
+export type QuizPlacement = "live" | "homework";
+
+export type QuizItemKind =
+  | "multiple_choice"
+  | "checkboxes"
+  | "true_false"
+  | "numeric_range"
+  | "matching"
+  | "ordering";
+
 export interface QuizChoiceJson {
   id: string;
-  shape: "triangle" | "diamond" | "circle" | "square";
+  shape?: "triangle" | "diamond" | "circle" | "square";
   text: string;
 }
+
+export type QuizSpecJson =
+  | { choices: QuizChoiceJson[] }
+  | { unit: string | null }
+  | {
+      prompts: Array<{ id: string; text: string }>;
+      options: Array<{ id: string; text: string }>;
+    }
+  | { items: Array<{ id: string; text: string }> }
+  | Record<string, never>;
+
+export type QuizAnswerKeyJson =
+  | { correctChoiceId: string }
+  | { correctChoiceIds: string[] }
+  | { correct: boolean }
+  | { min: number; max: number }
+  | { pairs: Record<string, string> }
+  | { order: string[] };
+
+export type QuizResponseJson = Record<string, unknown>;
 
 export const users = pgTable(
   "users",
@@ -466,10 +513,15 @@ export const quizQuestions = pgTable("quiz_questions", {
     .notNull()
     .references(() => lessons.id, { onDelete: "cascade" }),
   orderIndex: integer("order_index").notNull(),
+  placement: quizPlacementEnum("placement").notNull().default("live"),
+  kind: quizItemKindEnum("kind").notNull().default("multiple_choice"),
   prompt: text("prompt").notNull(),
   scenarioNote: text("scenario_note"),
-  choices: jsonb("choices").$type<QuizChoiceJson[]>().notNull(),
-  correctChoiceId: text("correct_choice_id").notNull(),
+  requireExplanation: boolean("require_explanation").notNull().default(false),
+  spec: jsonb("spec").$type<QuizSpecJson>().notNull().default({}),
+  answerKey: jsonb("answer_key").$type<QuizAnswerKeyJson>().notNull().default({
+    correctChoiceId: "",
+  }),
   explanation: text("explanation").notNull().default(""),
   timeLimitSec: integer("time_limit_sec").notNull().default(20),
   points: integer("points").notNull().default(1000),
@@ -488,6 +540,7 @@ export const quizAttempts = pgTable("quiz_attempts", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   displayName: text("display_name").notNull(),
+  placement: quizPlacementEnum("placement").notNull().default("live"),
   scorePoints: integer("score_points").notNull(),
   correctCount: integer("correct_count").notNull(),
   totalQuestions: integer("total_questions").notNull(),
@@ -508,7 +561,7 @@ export const quizAttemptItems = pgTable("quiz_attempt_items", {
   questionId: uuid("question_id")
     .notNull()
     .references(() => quizQuestions.id, { onDelete: "cascade" }),
-  choiceId: text("choice_id"),
+  response: jsonb("response").$type<QuizResponseJson>().notNull().default({}),
   isCorrect: boolean("is_correct").notNull(),
   timeSpentSec: integer("time_spent_sec").notNull().default(0),
 });

@@ -12,6 +12,11 @@ import {
   newShareCode,
 } from "@/lib/lesson-service";
 import type { LessonDeliverableFlags, StudioAttachment } from "@/lib/lesson-studio";
+import {
+  DEFAULT_HOMEWORK_COUNT,
+  DEFAULT_QUIZ_COUNT,
+  DEFAULT_SLIDE_COUNT,
+} from "@/lib/lesson-studio";
 import { requireUser } from "@/lib/user-session";
 
 export const GET = async (request: Request): Promise<NextResponse> => {
@@ -62,10 +67,13 @@ export const POST = async (request: Request): Promise<NextResponse> => {
   const amountOfLessons = Math.min(6, Math.max(1, body.amountOfLessons ?? 1));
   const minutesPerLesson = Math.min(90, Math.max(20, body.minutesPerLesson ?? 45));
   const creativeAngle = (body.creativeAngle ?? "").trim();
-  const deliverables: LessonDeliverableFlags = body.deliverables ?? {
-    slides: true,
-    kahootTest: true,
-    homework: true,
+  const deliverables: LessonDeliverableFlags = {
+    slides: body.deliverables?.slides ?? true,
+    kahootTest: body.deliverables?.kahootTest ?? true,
+    homework: body.deliverables?.homework ?? true,
+    slideCount: body.deliverables?.slideCount ?? DEFAULT_SLIDE_COUNT,
+    quizCount: body.deliverables?.quizCount ?? DEFAULT_QUIZ_COUNT,
+    homeworkCount: body.deliverables?.homeworkCount ?? DEFAULT_HOMEWORK_COUNT,
   };
   const noteAttachments = (body.attachments ?? [])
     .filter((item) => item.kind === "notes" && item.useInAi && item.notesText)

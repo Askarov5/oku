@@ -103,10 +103,11 @@ export const ThemeShell = ({
     drawer.current?.close();
   };
 
-  // A tap on the backdrop or on any link inside the drawer closes it.
+  // A tap on the backdrop, a link, or a nav button closes the drawer.
+  // Lesson Studio's rail is buttons, not links, so button taps must dismiss it too.
   const onDrawerClick = (event: MouseEvent<HTMLDialogElement>): void => {
     const target = event.target as HTMLElement;
-    if (target === event.currentTarget || target.closest("a")) {
+    if (target === event.currentTarget || target.closest("a, button")) {
       closeDrawer();
     }
   };

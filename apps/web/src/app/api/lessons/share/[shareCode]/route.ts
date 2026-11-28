@@ -10,16 +10,23 @@ interface RouteContext {
 }
 
 export const GET = async (
-  _request: Request,
+  request: Request,
   context: RouteContext,
 ): Promise<NextResponse> => {
   await ensureSampleLesson();
   const { shareCode } = await context.params;
+  const url = new URL(request.url);
+  const placement =
+    url.searchParams.get("placement") === "homework" ? "homework" : "live";
   const bundle = await loadLessonByShareCode(shareCode);
   if (!bundle) {
     return NextResponse.json({ error: "Quiz code not found" }, { status: 404 });
   }
+  const workspace = bundleToWorkspace(bundle, { hideAnswers: true });
   return NextResponse.json({
-    lesson: bundleToWorkspace(bundle, { hideAnswers: true }),
+    lesson: workspace,
+    placement,
+    questions:
+      placement === "homework" ? workspace.homework : workspace.questions,
   });
 };

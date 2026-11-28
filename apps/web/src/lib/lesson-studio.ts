@@ -1,12 +1,70 @@
-export type KahootChoiceShape = "triangle" | "diamond" | "circle" | "square";
+import type { QuizItem, QuizChoiceShape } from "./quiz";
+
+export type KahootChoiceShape = QuizChoiceShape;
 
 export type LessonStage =
   | "setup"
   | "generating_plan"
   | "review_plan"
   | "generating_materials"
+  | "preview"
   | "studio"
   | "failed";
+
+export type StudioWorkflowStage =
+  | "setup"
+  | "review_plan"
+  | "preview"
+  | "studio";
+
+const STUDIO_OPENED_KEY = "oku-lesson-studio-opened-v1";
+
+export const isStudioOpened = (lessonId: string): boolean => {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = window.localStorage.getItem(STUDIO_OPENED_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) && parsed.includes(lessonId);
+  } catch {
+    return false;
+  }
+};
+
+export const markStudioOpened = (lessonId: string): void => {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(STUDIO_OPENED_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    const ids = Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
+    if (!ids.includes(lessonId)) {
+      window.localStorage.setItem(
+        STUDIO_OPENED_KEY,
+        JSON.stringify([...ids, lessonId]),
+      );
+    }
+  } catch {
+    // Ignore private-mode quota errors.
+  }
+};
+
+export const clearStudioOpened = (lessonId: string): void => {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(STUDIO_OPENED_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return;
+    window.localStorage.setItem(
+      STUDIO_OPENED_KEY,
+      JSON.stringify(parsed.filter((id) => id !== lessonId)),
+    );
+  } catch {
+    // Ignore private-mode quota errors.
+  }
+};
 
 export interface StudioFigure {
   id: string;
@@ -43,7 +101,52 @@ export interface LessonDeliverableFlags {
   slides: boolean;
   kahootTest: boolean;
   homework: boolean;
+  /** Teaching slides to generate (1–10). Quiz-launch slide is extra. */
+  slideCount?: number;
+  /** Live quiz questions to generate (1–10). */
+  quizCount?: number;
+  /** Homework practice items to generate (1–10). */
+  homeworkCount?: number;
 }
+
+export const DELIVERABLE_COUNT_MIN = 1;
+export const DELIVERABLE_COUNT_MAX = 10;
+export const DEFAULT_SLIDE_COUNT = 4;
+export const DEFAULT_QUIZ_COUNT = 4;
+export const DEFAULT_HOMEWORK_COUNT = 6;
+
+export const clampDeliverableCount = (
+  value: number | undefined,
+  fallback: number,
+): number => {
+  const n = typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  return Math.min(
+    DELIVERABLE_COUNT_MAX,
+    Math.max(DELIVERABLE_COUNT_MIN, Math.round(n)),
+  );
+};
+
+export const resolveSlideCount = (
+  deliverables: LessonDeliverableFlags,
+): number => clampDeliverableCount(deliverables.slideCount, DEFAULT_SLIDE_COUNT);
+
+export const resolveQuizCount = (
+  deliverables: LessonDeliverableFlags,
+): number => clampDeliverableCount(deliverables.quizCount, DEFAULT_QUIZ_COUNT);
+
+export const resolveHomeworkCount = (
+  deliverables: LessonDeliverableFlags,
+): number =>
+  clampDeliverableCount(deliverables.homeworkCount, DEFAULT_HOMEWORK_COUNT);
+
+export const defaultDeliverables = (): LessonDeliverableFlags => ({
+  slides: true,
+  kahootTest: true,
+  homework: true,
+  slideCount: DEFAULT_SLIDE_COUNT,
+  quizCount: DEFAULT_QUIZ_COUNT,
+  homeworkCount: DEFAULT_HOMEWORK_COUNT,
+});
 
 export interface StudioAttachment {
   id: string;
@@ -84,6 +187,7 @@ export interface LessonSlide {
   speakerNotes: string;
 }
 
+/** @deprecated Prefer QuizItem from `@/lib/quiz`. Kept for gradual migration. */
 export interface KahootChoice {
   id: string;
   shape: KahootChoiceShape;
@@ -91,6 +195,7 @@ export interface KahootChoice {
   isCorrect: boolean;
 }
 
+/** @deprecated Prefer QuizItem from `@/lib/quiz`. */
 export interface KahootQuestion {
   id: string;
   prompt: string;
@@ -101,6 +206,7 @@ export interface KahootQuestion {
   explanation: string;
 }
 
+/** @deprecated Homework is now QuizItem[] with requireExplanation. */
 export interface HomeworkItem {
   id: string;
   title: string;
@@ -108,6 +214,8 @@ export interface HomeworkItem {
   expectedMinutes: number;
   answerGuide: string;
 }
+
+export type { QuizItem };
 
 export interface QuizLeaderboardEntry {
   id: string;
@@ -142,8 +250,11 @@ export interface LessonWorkspace {
   attachments: StudioAttachment[];
   planBlocks: LessonPlanBlock[];
   slides: LessonSlide[];
-  questions: KahootQuestion[];
-  homework: HomeworkItem[];
+  /** Live / end-of-class quiz items. */
+  questions: QuizItem[];
+  /** Homework quiz items (auto-graded). */
+  homework: QuizItem[];
+  homeworkLeaderboard?: QuizLeaderboardEntry[];
   leaderboard: QuizLeaderboardEntry[];
   updatedAt: string;
   jobStatus?: string | null;
@@ -385,7 +496,7 @@ export const buildGeneratedPlan = (params: {
         {
           id: `plan-${lessonNumber}-4`,
           lessonNumber,
-          title: `Kahoot Speed Check${suffix}`,
+          title: `Quiz Speed Check${suffix}`,
           minutes: quizMin,
           pageRef: null,
           explanation:
@@ -441,11 +552,11 @@ export const buildGeneratedPlan = (params: {
         {
           id: `plan-${lessonNumber}-4`,
           lessonNumber,
-          title: `Auto-Graded Kahoot Check${suffix}`,
+          title: `Auto-Graded Quiz Check${suffix}`,
           minutes: quizMin,
           pageRef: null,
           explanation:
-            "Launch the shareable Kahoot-style quiz link so every student checks comprehension and gets instant feedback on the 2–5 scale.",
+            "Launch the shareable quiz link so every student checks comprehension and gets instant feedback on the 2–5 scale.",
           teacherNote: "Review the most-missed question immediately from the scoreboard.",
         },
         {
@@ -478,10 +589,13 @@ export const buildGeneratedMaterials = (
   >,
 ): {
   slides: LessonSlide[];
-  questions: KahootQuestion[];
-  homework: HomeworkItem[];
+  questions: QuizItem[];
+  homework: QuizItem[];
 } => {
   const soccer = isSoccerAngle(workspace.creativeAngle, workspace.unitTitle);
+  const slideCount = resolveSlideCount(workspace.deliverables);
+  const quizCount = resolveQuizCount(workspace.deliverables);
+  const homeworkCount = resolveHomeworkCount(workspace.deliverables);
 
   const uploadedSlides: LessonSlide[] = workspace.attachments
     .filter((item) => item.includeAsSlide && item.previewUrl)
@@ -502,79 +616,111 @@ export const buildGeneratedMaterials = (
         "Walk students through your uploaded visual and tie it back to the textbook section.",
     }));
 
-  const baseSlides: LessonSlide[] = soccer
-    ? [
-        {
-          id: "slide-1",
-          kind: "concept",
-          lessonNumber: 1,
-          title: "Kinetic Energy Through a Soccer Free Kick",
-          bullets: [
-            "A match soccer ball has a mass of only m = 0.45 kg",
-            "Gentle pass (8 m/s) = 14.4 J — easy to trap with your boot",
-            "Pro free kick (32 m/s) = 230.4 J — 16x the energy at 4x the speed!",
-          ],
-          formulaOrCallout: "Ek = 1/2 · m · v²   (measured in Joules, J)",
-          pageRef: "p. 42",
-          imageUrl: null,
-          imageCaption: null,
-          speakerNotes:
-            "Start with the question before revealing the numbers: why does 4x the speed create 16x the impact on the goalkeeper's hands?",
-        },
-        {
-          id: "slide-2",
-          kind: "concept",
-          lessonNumber: 1,
-          title: "Mass vs. Velocity: Which Matters More?",
-          bullets: [
-            "Doubling mass (2m) -> Kinetic energy doubles (2x Ek)",
-            "Doubling kick speed (2v) -> Kinetic energy quadruples (4x Ek)",
-            "Tripling kick speed (3v) -> Kinetic energy grows ninefold (9x Ek)",
-          ],
-          formulaOrCallout:
-            "Always convert grams -> kilograms (450 g = 0.45 kg) and km/h -> m/s (divide by 3.6)",
-          pageRef: "p. 43",
-          imageUrl: null,
-          imageCaption: null,
-          speakerNotes:
-            "Point out the unit trap on p. 43: FIFA broadcasts show shot speed in km/h (e.g. 108 km/h = 30 m/s).",
-        },
-        {
-          id: "slide-3",
-          kind: "worked_example",
-          lessonNumber: 1,
-          title: "Worked Match Problem: Penalty Shot",
-          bullets: [
-            "Given: ball mass m = 0.40 kg, shot speed v = 25 m/s",
-            "Step 1: Square velocity -> v² = 25 × 25 = 625 m²/s²",
-            "Step 2: Multiply -> Ek = 0.5 × 0.40 × 625 = 125 J",
-          ],
-          formulaOrCallout:
-            "Work-Energy Link: The striker's foot did 125 J of net work on the stationary ball.",
-          pageRef: "p. 44",
-          imageUrl: null,
-          imageCaption: null,
-          speakerNotes:
-            "Cover Step 2 first and give students 30 seconds to calculate 0.2 * 625 in their notebooks.",
-        },
-      ]
-    : workspace.planBlocks.slice(0, 3).map((block, index) => ({
+  const soccerSlides: LessonSlide[] = [
+    {
+      id: "slide-1",
+      kind: "concept",
+      lessonNumber: 1,
+      title: "Kinetic Energy Through a Soccer Free Kick",
+      bullets: [
+        "A match soccer ball has a mass of only m = 0.45 kg",
+        "Gentle pass (8 m/s) = 14.4 J — easy to trap with your boot",
+        "Pro free kick (32 m/s) = 230.4 J — 16x the energy at 4x the speed!",
+      ],
+      formulaOrCallout: "Ek = 1/2 · m · v²   (measured in Joules, J)",
+      pageRef: "p. 42",
+      imageUrl: null,
+      imageCaption: null,
+      speakerNotes:
+        "Start with the question before revealing the numbers: why does 4x the speed create 16x the impact on the goalkeeper's hands?",
+    },
+    {
+      id: "slide-2",
+      kind: "concept",
+      lessonNumber: 1,
+      title: "Mass vs. Velocity: Which Matters More?",
+      bullets: [
+        "Doubling mass (2m) -> Kinetic energy doubles (2x Ek)",
+        "Doubling kick speed (2v) -> Kinetic energy quadruples (4x Ek)",
+        "Tripling kick speed (3v) -> Kinetic energy grows ninefold (9x Ek)",
+      ],
+      formulaOrCallout:
+        "Always convert grams -> kilograms (450 g = 0.45 kg) and km/h -> m/s (divide by 3.6)",
+      pageRef: "p. 43",
+      imageUrl: null,
+      imageCaption: null,
+      speakerNotes:
+        "Point out the unit trap on p. 43: FIFA broadcasts show shot speed in km/h (e.g. 108 km/h = 30 m/s).",
+    },
+    {
+      id: "slide-3",
+      kind: "worked_example",
+      lessonNumber: 1,
+      title: "Worked Match Problem: Penalty Shot",
+      bullets: [
+        "Given: ball mass m = 0.40 kg, shot speed v = 25 m/s",
+        "Step 1: Square velocity -> v² = 25 × 25 = 625 m²/s²",
+        "Step 2: Multiply -> Ek = 0.5 × 0.40 × 625 = 125 J",
+      ],
+      formulaOrCallout:
+        "Work-Energy Link: The striker's foot did 125 J of net work on the stationary ball.",
+      pageRef: "p. 44",
+      imageUrl: null,
+      imageCaption: null,
+      speakerNotes:
+        "Cover Step 2 first and give students 30 seconds to calculate 0.2 * 625 in their notebooks.",
+    },
+  ];
+
+  const planSlides: LessonSlide[] = workspace.planBlocks.map((block, index) => ({
+    id: `slide-gen-${index + 1}`,
+    kind: index === workspace.planBlocks.length - 1 ? "worked_example" : "concept",
+    lessonNumber: block.lessonNumber,
+    title: block.title,
+    bullets: block.explanation
+      .split(/(?<=\.)\s+/)
+      .filter(Boolean)
+      .slice(0, 3),
+    formulaOrCallout: workspace.creativeAngle.trim()
+      ? `Angle: ${workspace.creativeAngle.trim()}`
+      : `Textbook reference: ${workspace.pageRangeLabel}`,
+    pageRef: block.pageRef,
+    imageUrl: null,
+    imageCaption: null,
+    speakerNotes: block.teacherNote,
+  }));
+
+  const teachingPool: LessonSlide[] = soccer
+    ? [...soccerSlides, ...planSlides.filter((slide) => !soccerSlides.some((s) => s.title === slide.title))]
+    : planSlides;
+
+  const teachingSlides: LessonSlide[] = Array.from(
+    { length: slideCount },
+    (_, index) => {
+      const existing = teachingPool[index];
+      if (existing) return { ...existing, id: `slide-gen-${index + 1}` };
+      const block = workspace.planBlocks[index % Math.max(1, workspace.planBlocks.length)];
+      return {
         id: `slide-gen-${index + 1}`,
-        kind: index === 2 ? "worked_example" : "concept",
-        lessonNumber: block.lessonNumber,
-        title: block.title,
-        bullets: block.explanation
-          .split(/(?<=\.)\s+/)
-          .filter(Boolean)
-          .slice(0, 3),
+        kind: index === slideCount - 1 ? "worked_example" : "concept",
+        lessonNumber: block?.lessonNumber ?? 1,
+        title: block?.title ?? `${workspace.unitTitle} · part ${index + 1}`,
+        bullets: block?.explanation
+          ? block.explanation
+              .split(/(?<=\.)\s+/)
+              .filter(Boolean)
+              .slice(0, 3)
+          : [`Key idea ${index + 1} from ${workspace.unitTitle}`],
         formulaOrCallout: workspace.creativeAngle.trim()
           ? `Angle: ${workspace.creativeAngle.trim()}`
           : `Textbook reference: ${workspace.pageRangeLabel}`,
-        pageRef: block.pageRef,
+        pageRef: block?.pageRef ?? workspace.pageRangeLabel,
         imageUrl: null,
         imageCaption: null,
-        speakerNotes: block.teacherNote,
-      }));
+        speakerNotes: block?.teacherNote ?? "Stay close to the textbook pages.",
+      };
+    },
+  );
 
   const quizLaunchSlide: LessonSlide = {
     id: "slide-quiz-launch",
@@ -596,116 +742,82 @@ export const buildGeneratedMaterials = (
 
   const slides = workspace.deliverables.slides
     ? [
-        ...baseSlides.slice(0, 2),
+        ...teachingSlides.slice(0, Math.min(2, teachingSlides.length)),
         ...uploadedSlides,
-        ...baseSlides.slice(2),
+        ...teachingSlides.slice(Math.min(2, teachingSlides.length)),
         ...(workspace.deliverables.kahootTest ? [quizLaunchSlide] : []),
       ]
     : [];
 
-  const questions: KahootQuestion[] = workspace.deliverables.kahootTest
+  const questionsPool: QuizItem[] = workspace.deliverables.kahootTest
     ? soccer
       ? [
           {
             id: "q-1",
+            kind: "multiple_choice",
             prompt:
               "A striker kicks a 0.4 kg soccer ball at 10 m/s. What is the ball's kinetic energy?",
             scenarioNote: "Use Ek = 1/2 · m · v²",
             timeLimitSec: 20,
             points: 1000,
+            requireExplanation: false,
             choices: [
-              { id: "q1-a", shape: "triangle", text: "20 J", isCorrect: true },
-              { id: "q1-b", shape: "diamond", text: "40 J", isCorrect: false },
-              { id: "q1-c", shape: "circle", text: "4 J", isCorrect: false },
-              { id: "q1-d", shape: "square", text: "200 J", isCorrect: false },
+              { id: "q1-a", shape: "triangle", text: "20 J" },
+              { id: "q1-b", shape: "diamond", text: "40 J" },
+              { id: "q1-c", shape: "circle", text: "4 J" },
+              { id: "q1-d", shape: "square", text: "200 J" },
             ],
+            answer: { correctChoiceId: "q1-a" },
             explanation: "Ek = 0.5 × 0.4 kg × (10 m/s)² = 0.2 × 100 = 20 J.",
           },
           {
             id: "q-2",
+            kind: "multiple_choice",
             prompt:
               "If a player doubles the speed of the same soccer ball (from 12 m/s to 24 m/s), its kinetic energy becomes…",
             scenarioNote: "Same ball mass m",
             timeLimitSec: 20,
             points: 1000,
+            requireExplanation: false,
             choices: [
-              {
-                id: "q2-a",
-                shape: "triangle",
-                text: "2 times greater",
-                isCorrect: false,
-              },
-              {
-                id: "q2-b",
-                shape: "diamond",
-                text: "4 times greater",
-                isCorrect: true,
-              },
-              {
-                id: "q2-c",
-                shape: "circle",
-                text: "8 times greater",
-                isCorrect: false,
-              },
-              {
-                id: "q2-d",
-                shape: "square",
-                text: "Unchanged",
-                isCorrect: false,
-              },
+              { id: "q2-a", shape: "triangle", text: "2 times greater" },
+              { id: "q2-b", shape: "diamond", text: "4 times greater" },
+              { id: "q2-c", shape: "circle", text: "8 times greater" },
+              { id: "q2-d", shape: "square", text: "Unchanged" },
             ],
+            answer: { correctChoiceId: "q2-b" },
             explanation:
               "Velocity is squared in Ek = 1/2 mv², so (2v)² = 4v² -> 4 times the kinetic energy.",
           },
           {
             id: "q-3",
+            kind: "multiple_choice",
             prompt:
               "Before plugging a 450 g soccer ball and a 108 km/h shot into Ek = 1/2 mv², which SI values must you use?",
             scenarioNote: "Watch your units (p. 43)",
             timeLimitSec: 25,
             points: 1000,
+            requireExplanation: false,
             choices: [
-              {
-                id: "q3-a",
-                shape: "triangle",
-                text: "m = 450 kg, v = 108 m/s",
-                isCorrect: false,
-              },
-              {
-                id: "q3-b",
-                shape: "diamond",
-                text: "m = 0.45 kg, v = 108 m/s",
-                isCorrect: false,
-              },
-              {
-                id: "q3-c",
-                shape: "circle",
-                text: "m = 0.45 kg, v = 30 m/s",
-                isCorrect: true,
-              },
-              {
-                id: "q3-d",
-                shape: "square",
-                text: "m = 4.5 kg, v = 30 m/s",
-                isCorrect: false,
-              },
+              { id: "q3-a", shape: "triangle", text: "m = 450 kg, v = 108 m/s" },
+              { id: "q3-b", shape: "diamond", text: "m = 0.45 kg, v = 108 m/s" },
+              { id: "q3-c", shape: "circle", text: "m = 0.45 kg, v = 30 m/s" },
+              { id: "q3-d", shape: "square", text: "m = 4.5 kg, v = 30 m/s" },
             ],
+            answer: { correctChoiceId: "q3-c" },
             explanation:
               "450 g ÷ 1000 = 0.45 kg, and 108 km/h ÷ 3.6 = 30 m/s.",
           },
           {
             id: "q-4",
+            kind: "true_false",
             prompt:
-              "A ball sits motionless on the penalty spot right before the whistle. What is its kinetic energy?",
+              "A ball sitting motionless on the penalty spot has zero kinetic energy.",
             scenarioNote: "v = 0 m/s",
             timeLimitSec: 15,
             points: 1000,
-            choices: [
-              { id: "q4-a", shape: "triangle", text: "0.45 J", isCorrect: false },
-              { id: "q4-b", shape: "diamond", text: "9.8 J", isCorrect: false },
-              { id: "q4-c", shape: "circle", text: "1 J", isCorrect: false },
-              { id: "q4-d", shape: "square", text: "0 J", isCorrect: true },
-            ],
+            requireExplanation: false,
+            answer: { correct: true },
             explanation:
               "When speed v = 0, Ek = 1/2 · m · 0² = 0 J regardless of mass.",
           },
@@ -713,126 +825,225 @@ export const buildGeneratedMaterials = (
       : [
           {
             id: "q-gen-1",
+            kind: "multiple_choice",
             prompt: `Which statement best captures the main concept of "${workspace.unitTitle}"?`,
             scenarioNote: workspace.pageRangeLabel,
             timeLimitSec: 20,
             points: 1000,
+            requireExplanation: false,
             choices: [
               {
                 id: "qg1-a",
                 shape: "triangle",
                 text: "Core relationships link directly to measurable factors in the unit",
-                isCorrect: true,
               },
               {
                 id: "qg1-b",
                 shape: "diamond",
                 text: "All variables remain constant regardless of conditions",
-                isCorrect: false,
               },
               {
                 id: "qg1-c",
                 shape: "circle",
                 text: "Only historical definitions apply",
-                isCorrect: false,
               },
               {
                 id: "qg1-d",
                 shape: "square",
                 text: "None of the textbook principles apply",
-                isCorrect: false,
               },
             ],
+            answer: { correctChoiceId: "qg1-a" },
             explanation: `Reviewed in ${workspace.unitTitle} (${workspace.pageRangeLabel}).`,
           },
           {
             id: "q-gen-2",
-            prompt: `When applying ${workspace.unitTitle} to a practical classroom example, what should you check first?`,
+            kind: "true_false",
+            prompt: `In ${workspace.unitTitle}, you should identify given quantities and units before computing.`,
             scenarioNote: workspace.audience,
-            timeLimitSec: 20,
+            timeLimitSec: 15,
             points: 1000,
-            choices: [
-              {
-                id: "qg2-a",
-                shape: "triangle",
-                text: "Guess the conclusion without checking given data",
-                isCorrect: false,
-              },
-              {
-                id: "qg2-b",
-                shape: "diamond",
-                text: "Identify the given quantities, units, and governing relationship",
-                isCorrect: true,
-              },
-              {
-                id: "qg2-c",
-                shape: "circle",
-                text: "Ignore the diagram labels",
-                isCorrect: false,
-              },
-              {
-                id: "qg2-d",
-                shape: "square",
-                text: "Change the definition mid-problem",
-                isCorrect: false,
-              },
-            ],
+            requireExplanation: false,
+            answer: { correct: true },
             explanation:
               "Always verify given quantities and definitions before computing or comparing.",
           },
         ]
     : [];
 
-  const homework: HomeworkItem[] = workspace.deliverables.homework
+  const questions: QuizItem[] =
+    questionsPool.length === 0
+      ? []
+      : Array.from({ length: quizCount }, (_, index) => {
+          const source = questionsPool[index % questionsPool.length]!;
+          return {
+            ...source,
+            id: `${source.id}-n${index + 1}`,
+          };
+        });
+
+  const homeworkPool: QuizItem[] = workspace.deliverables.homework
     ? soccer
       ? [
           {
             id: "hw-1",
-            title: "1. Warm-up Calculation: Header vs. Volley",
+            kind: "numeric_range",
             prompt:
-              "A 0.44 kg soccer ball travels at 8 m/s off a header and at 20 m/s off a half-volley. Compute Ek in Joules for both shots and find how many times more energy the volley carries.",
-            expectedMinutes: 8,
-            answerGuide:
-              "Header: 0.5 × 0.44 × 64 = 14.08 J. Volley: 0.5 × 0.44 × 400 = 88 J. Ratio: 88 / 14.08 = 6.25×.",
+              "A 0.44 kg soccer ball travels at 8 m/s. What is its kinetic energy in Joules?",
+            scenarioNote: "Ek = 1/2 mv²",
+            timeLimitSec: 40,
+            points: 1000,
+            requireExplanation: true,
+            unit: "J",
+            answer: { min: 14, max: 14.2 },
+            explanation: "0.5 × 0.44 × 64 = 14.08 J.",
           },
           {
             id: "hw-2",
-            title: "2. Unit Conversion Challenge: Fastest Recorded Free Kick",
+            kind: "multiple_choice",
             prompt:
-              "A free kick is clocked at 126 km/h using a 450 g ball. Convert mass to kg and speed to m/s, then compute the kinetic energy and the work the goalkeeper's gloves must absorb to stop it.",
-            expectedMinutes: 10,
-            answerGuide:
-              "m = 0.45 kg, v = 126 / 3.6 = 35 m/s. Ek = 0.5 × 0.45 × 1225 = 275.6 J. Work by gloves = −275.6 J.",
+              "A free kick is clocked at 126 km/h with a 450 g ball. Which SI pair is correct?",
+            scenarioNote: null,
+            timeLimitSec: 30,
+            points: 1000,
+            requireExplanation: true,
+            choices: [
+              { id: "hw2-a", shape: "triangle", text: "0.45 kg, 35 m/s" },
+              { id: "hw2-b", shape: "diamond", text: "450 kg, 126 m/s" },
+              { id: "hw2-c", shape: "circle", text: "0.45 kg, 126 m/s" },
+              { id: "hw2-d", shape: "square", text: "4.5 kg, 35 m/s" },
+            ],
+            answer: { correctChoiceId: "hw2-a" },
+            explanation: "m = 0.45 kg, v = 126 / 3.6 = 35 m/s.",
           },
           {
             id: "hw-3",
-            title: "3. Conceptual Check (Textbook p. 45)",
+            kind: "true_false",
             prompt:
-              "Compare a 0.45 kg soccer ball kicked at 20 m/s with a 0.90 kg training medicine ball thrown at 12 m/s. Without guessing, calculate which one has greater kinetic energy and explain why.",
-            expectedMinutes: 7,
-            answerGuide:
-              "Soccer ball: 0.5 × 0.45 × 400 = 90 J. Medicine ball: 0.5 × 0.90 × 144 = 64.8 J. The lighter soccer ball wins because velocity is squared.",
+              "A lighter soccer ball kicked faster can carry more kinetic energy than a heavier medicine ball thrown slower.",
+            scenarioNote: null,
+            timeLimitSec: 20,
+            points: 1000,
+            requireExplanation: true,
+            answer: { correct: true },
+            explanation:
+              "Velocity is squared, so a fast light ball can outpace a slow heavy one.",
+          },
+          {
+            id: "hw-4",
+            kind: "checkboxes",
+            prompt: "Which statements about Ek = 1/2 mv² are true?",
+            scenarioNote: null,
+            timeLimitSec: 30,
+            points: 1000,
+            requireExplanation: true,
+            choices: [
+              { id: "hw4-a", text: "Doubling speed multiplies Ek by 4" },
+              { id: "hw4-b", text: "Doubling mass multiplies Ek by 2" },
+              { id: "hw4-c", text: "Doubling speed multiplies Ek by 2" },
+              { id: "hw4-d", text: "Units must be SI (kg, m/s)" },
+            ],
+            answer: { correctChoiceIds: ["hw4-a", "hw4-b", "hw4-d"] },
+            explanation: "Speed is squared; mass is linear; SI units are required.",
+          },
+          {
+            id: "hw-5",
+            kind: "matching",
+            prompt: "Match each quantity with its SI unit.",
+            scenarioNote: null,
+            timeLimitSec: 45,
+            points: 1000,
+            requireExplanation: true,
+            prompts: [
+              { id: "p1", text: "Mass" },
+              { id: "p2", text: "Speed" },
+              { id: "p3", text: "Kinetic energy" },
+            ],
+            options: [
+              { id: "o1", text: "kg" },
+              { id: "o2", text: "m/s" },
+              { id: "o3", text: "J" },
+              { id: "o4", text: "km/h" },
+            ],
+            answer: { pairs: { p1: "o1", p2: "o2", p3: "o3" } },
+            explanation: "SI: mass in kg, speed in m/s, energy in J.",
+          },
+          {
+            id: "hw-6",
+            kind: "ordering",
+            prompt: "Order these steps to compute Ek for a free kick.",
+            scenarioNote: null,
+            timeLimitSec: 40,
+            points: 1000,
+            requireExplanation: true,
+            items: [
+              { id: "i1", text: "Convert mass and speed to SI" },
+              { id: "i2", text: "Square the speed" },
+              { id: "i3", text: "Multiply 1/2 × m × v²" },
+            ],
+            answer: { order: ["i1", "i2", "i3"] },
+            explanation: "Convert first, then square v, then apply the formula.",
           },
         ]
       : [
           {
             id: "hw-gen-1",
-            title: `1. Core Review (${workspace.pageRangeLabel})`,
-            prompt: `Read ${workspace.unitTitle} (${workspace.pageRangeLabel}) and summarize the three main relationships in your own words with one real-life example.`,
-            expectedMinutes: 10,
-            answerGuide:
-              "Check for accurate definitions, clear cause-and-effect, and an original example.",
+            kind: "multiple_choice",
+            prompt: `Which skill matters most when reviewing ${workspace.unitTitle}?`,
+            scenarioNote: workspace.pageRangeLabel,
+            timeLimitSec: 30,
+            points: 1000,
+            requireExplanation: true,
+            choices: [
+              {
+                id: "hwg1-a",
+                shape: "triangle",
+                text: "Link definitions to a real example",
+              },
+              {
+                id: "hwg1-b",
+                shape: "diamond",
+                text: "Memorize page numbers only",
+              },
+              {
+                id: "hwg1-c",
+                shape: "circle",
+                text: "Skip units and labels",
+              },
+              {
+                id: "hwg1-d",
+                shape: "square",
+                text: "Change the definition mid-problem",
+              },
+            ],
+            answer: { correctChoiceId: "hwg1-a" },
+            explanation:
+              "Accurate definitions plus an original example show understanding.",
           },
           {
             id: "hw-gen-2",
-            title: "2. Applied Practice Problem",
-            prompt: `Solve two practice exercises at the end of ${workspace.unitTitle}, showing each step clearly.`,
-            expectedMinutes: 12,
-            answerGuide:
-              "Full credit for complete steps, proper units/labels, and verified final result.",
+            kind: "true_false",
+            prompt: `Practice problems for ${workspace.unitTitle} should show complete steps and units.`,
+            scenarioNote: null,
+            timeLimitSec: 20,
+            points: 1000,
+            requireExplanation: true,
+            answer: { correct: true },
+            explanation: "Complete steps and units earn full credit.",
           },
         ]
     : [];
+
+  const homework: QuizItem[] =
+    homeworkPool.length === 0
+      ? []
+      : Array.from({ length: homeworkCount }, (_, index) => {
+          const source = homeworkPool[index % homeworkPool.length]!;
+          return {
+            ...source,
+            id: `${source.id}-n${index + 1}`,
+          };
+        });
 
   return { slides, questions, homework };
 };
@@ -843,11 +1054,7 @@ export const createPrebuiltSoccerLesson = (): LessonWorkspace => {
   const shareCode = "ek-soccer-9a";
   const creativeAngle =
     "Explain kinetic energy using a soccer ball, free kicks, and comparing shot speed vs. ball weight so students stay hooked.";
-  const deliverables: LessonDeliverableFlags = {
-    slides: true,
-    kahootTest: true,
-    homework: true,
-  };
+  const deliverables: LessonDeliverableFlags = defaultDeliverables();
   const planBlocks = buildGeneratedPlan({
     book,
     unit,

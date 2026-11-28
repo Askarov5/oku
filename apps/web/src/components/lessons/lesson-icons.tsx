@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import type { KahootChoiceShape } from "@/lib/lesson-studio";
 
 export {
+  BookOpenIcon,
   CheckIcon,
   ClockIcon,
   CopyIcon,

@@ -4,6 +4,7 @@ import {
   ArrowUpTrayIcon,
   ArrowsPointingOutIcon,
   Bars3Icon,
+  BookOpenIcon as BookOpen,
   CheckIcon as Check,
   ChevronDownIcon as ChevronDown,
   ChevronLeftIcon as ChevronLeft,
@@ -73,3 +74,4 @@ export const FullscreenIcon = icon(ArrowsPointingOutIcon);
 export const ExternalLinkIcon = icon(ArrowTopRightOnSquareIcon);
 export const TrophyIcon = icon(Trophy);
 export const DocumentIcon = icon(DocumentTextIcon);
+export const BookOpenIcon = icon(BookOpen);

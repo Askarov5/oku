@@ -7,6 +7,32 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 
+def reclaim_stale_lesson_jobs(
+    conn: psycopg.Connection,
+    *,
+    stale_after_sec: int = 600,
+) -> int:
+    """Re-queue materials/plan jobs left in `running` after a worker crash."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE lesson_jobs
+            SET status = 'queued',
+                error = COALESCE(error, 'requeued after stale running state'),
+                started_at = NULL,
+                updated_at = NOW()
+            WHERE status = 'running'
+              AND COALESCE(updated_at, started_at, created_at)
+                  < NOW() - (%s * INTERVAL '1 second')
+            RETURNING id
+            """,
+            (stale_after_sec,),
+        )
+        rows = cur.fetchall()
+    conn.commit()
+    return len(rows)
+
+
 def claim_lesson_job(conn: psycopg.Connection) -> dict[str, Any] | None:
     with conn.cursor() as cur:
         cur.execute(
@@ -46,6 +72,20 @@ def get_lesson(conn: psycopg.Connection, lesson_id: UUID | str) -> dict[str, Any
         if not lesson:
             raise ValueError(f"lesson not found: {lesson_id}")
         return lesson
+
+
+def touch_lesson_job(conn: psycopg.Connection, *, job_id: UUID | str) -> None:
+    """Bump updated_at so long LLM runs are not mistaken for crashed workers."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE lesson_jobs
+            SET updated_at = NOW()
+            WHERE id = %s AND status = 'running'
+            """,
+            (job_id,),
+        )
+    conn.commit()
 
 
 def finish_lesson_job(
@@ -99,55 +139,52 @@ def write_materials(
     *,
     lesson_id: UUID | str,
     slides: list[dict[str, Any]],
-    homework: list[dict[str, Any]],
-    questions: list[dict[str, Any]],
+    live_questions: list[dict[str, Any]],
+    homework_questions: list[dict[str, Any]],
 ) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
             UPDATE lessons
             SET slides = %s,
-                homework = %s,
+                homework = '[]'::jsonb,
                 stage = 'studio',
                 updated_at = NOW()
             WHERE id = %s
             """,
-            (Jsonb(slides), Jsonb(homework), lesson_id),
+            (Jsonb(slides), lesson_id),
         )
         cur.execute("DELETE FROM quiz_questions WHERE lesson_id = %s", (lesson_id,))
-        for index, question in enumerate(questions):
-            correct = next(
-                (choice["id"] for choice in question["choices"] if choice.get("isCorrect")),
-                question["choices"][0]["id"],
-            )
-            choices = [
-                {
-                    "id": choice["id"],
-                    "shape": choice["shape"],
-                    "text": choice["text"],
-                }
-                for choice in question["choices"]
-            ]
-            cur.execute(
-                """
-                INSERT INTO quiz_questions (
-                    lesson_id, order_index, prompt, scenario_note, choices,
-                    correct_choice_id, explanation, time_limit_sec, points, concept_id
+
+        def insert_batch(questions: list[dict[str, Any]], placement: str) -> None:
+            for index, question in enumerate(questions):
+                cur.execute(
+                    """
+                    INSERT INTO quiz_questions (
+                        lesson_id, order_index, placement, kind, prompt, scenario_note,
+                        require_explanation, spec, answer_key, explanation,
+                        time_limit_sec, points, concept_id
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL)
+                    """,
+                    (
+                        lesson_id,
+                        index,
+                        placement,
+                        question["kind"],
+                        question["prompt"],
+                        question.get("scenarioNote"),
+                        bool(question.get("requireExplanation")),
+                        Jsonb(question.get("spec") or {}),
+                        Jsonb(question.get("answerKey") or {}),
+                        question.get("explanation") or "",
+                        int(question.get("timeLimitSec") or 20),
+                        int(question.get("points") or 1000),
+                    ),
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NULL)
-                """,
-                (
-                    lesson_id,
-                    index,
-                    question["prompt"],
-                    question.get("scenarioNote"),
-                    Jsonb(choices),
-                    correct,
-                    question.get("explanation") or "",
-                    int(question.get("timeLimitSec") or 20),
-                    int(question.get("points") or 1000),
-                ),
-            )
+
+        insert_batch(live_questions, "live")
+        insert_batch(homework_questions, "homework")
     conn.commit()
 
 

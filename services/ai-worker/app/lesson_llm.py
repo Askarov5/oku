@@ -81,46 +81,55 @@ def mock_plan(grounding: dict[str, Any]) -> LessonPlanPayload:
 def mock_materials(
     grounding: dict[str, Any],
     plan_blocks: list[dict[str, Any]],
-    deliverables: dict[str, bool],
+    deliverables: dict[str, Any],
     share_code: str,
 ) -> LessonMaterialsPayload:
+    from app.lesson_prompts import resolve_slide_count
+
     unit = grounding.get("unitTitle") or "Unit"
     page_ref = grounding.get("pageRangeLabel") or None
-    payload: dict[str, Any] = {"slides": [], "questions": [], "homework": []}
+    payload: dict[str, Any] = {"slides": []}
     if deliverables.get("slides"):
-        payload["slides"] = [
-            {
-                "id": "slide-1",
-                "kind": "concept",
-                "lessonNumber": 1,
-                "title": unit,
-                "bullets": [grounding.get("summary") or "Open the unit."],
-                "formulaOrCallout": None,
-                "pageRef": page_ref,
-                "imageUrl": None,
-                "imageCaption": None,
-                "speakerNotes": "Start from the textbook pages.",
-            },
-            {
-                "id": "slide-2",
-                "kind": "concept",
-                "lessonNumber": 1,
-                "title": plan_blocks[0]["title"] if plan_blocks else "Concept",
-                "bullets": [block["explanation"] for block in plan_blocks[:3]],
-                "formulaOrCallout": None,
-                "pageRef": page_ref,
-                "imageUrl": None,
-                "imageCaption": None,
-                "speakerNotes": "Stay close to the unit text.",
-            },
-        ]
+        slide_count = resolve_slide_count(deliverables)
+        teaching: list[dict[str, Any]] = []
+        for index in range(slide_count):
+            block = plan_blocks[index] if index < len(plan_blocks) else None
+            title = (
+                block["title"]
+                if block and block.get("title")
+                else (unit if index == 0 else f"Concept {index + 1}")
+            )
+            bullets = (
+                [block["explanation"]]
+                if block and block.get("explanation")
+                else [grounding.get("summary") or "Open the unit."]
+            )
+            teaching.append(
+                {
+                    "id": f"slide-{index + 1}",
+                    "kind": "worked_example" if index == slide_count - 1 and slide_count > 1 else "concept",
+                    "lessonNumber": int(block.get("lessonNumber") or 1) if block else 1,
+                    "title": title,
+                    "bullets": bullets[:3],
+                    "formulaOrCallout": None,
+                    "pageRef": (block.get("pageRef") if block else None) or page_ref,
+                    "imageUrl": None,
+                    "imageCaption": None,
+                    "speakerNotes": (
+                        block.get("teacherNote")
+                        if block and block.get("teacherNote")
+                        else "Stay close to the unit text."
+                    ),
+                }
+            )
+        payload["slides"] = teaching
         if deliverables.get("kahootTest"):
             payload["slides"].append(
                 {
                     "id": "slide-quiz",
                     "kind": "quiz_launch",
                     "lessonNumber": 1,
-                    "title": "Kahoot check",
+                    "title": "Quiz check",
                     "bullets": [f"Open /play/{share_code}"],
                     "formulaOrCallout": None,
                     "pageRef": None,
@@ -129,61 +138,6 @@ def mock_materials(
                     "speakerNotes": "Students join on their own devices.",
                 }
             )
-    if deliverables.get("kahootTest"):
-        payload["questions"] = [
-            {
-                "id": f"q-{i}",
-                "prompt": f"Question {i} about {unit}",
-                "scenarioNote": None,
-                "timeLimitSec": 20,
-                "points": 1000,
-                "choices": [
-                    {
-                        "id": f"q-{i}-a",
-                        "shape": "triangle",
-                        "text": "Option A",
-                        "isCorrect": True,
-                    },
-                    {
-                        "id": f"q-{i}-b",
-                        "shape": "diamond",
-                        "text": "Option B",
-                        "isCorrect": False,
-                    },
-                    {
-                        "id": f"q-{i}-c",
-                        "shape": "circle",
-                        "text": "Option C",
-                        "isCorrect": False,
-                    },
-                    {
-                        "id": f"q-{i}-d",
-                        "shape": "square",
-                        "text": "Option D",
-                        "isCorrect": False,
-                    },
-                ],
-                "explanation": "Option A matches the unit.",
-            }
-            for i in range(1, 5)
-        ]
-    if deliverables.get("homework"):
-        payload["homework"] = [
-            {
-                "id": "hw-1",
-                "title": "Practice",
-                "prompt": f"Rewrite the main idea of {unit} in your own words.",
-                "expectedMinutes": 8,
-                "answerGuide": grounding.get("summary") or "Check against the unit summary.",
-            },
-            {
-                "id": "hw-2",
-                "title": "Apply",
-                "prompt": "Solve one exercise from the textbook pages in this unit.",
-                "expectedMinutes": 10,
-                "answerGuide": "Compare with the worked example in class.",
-            },
-        ]
     return LessonMaterialsPayload.model_validate(payload)
 
 

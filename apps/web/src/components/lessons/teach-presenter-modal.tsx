@@ -153,7 +153,7 @@ export const TeachPresenterModal = ({
             type="button"
             onClick={() => setRunning((prev) => !prev)}
             title={running ? "Pause class timer" : "Resume class timer"}
-            className="inline-flex min-h-[40px] items-center gap-2 rounded-[var(--rounded-xs)] border border-[var(--rail-line)] px-3 py-1.5 font-[family-name:var(--font-mono)] text-xs font-semibold tabular-nums text-[var(--text-on-rail)] hover:bg-[var(--rail-hover)]"
+            className="inline-flex min-h-11 items-center gap-2 rounded-[var(--rounded-xs)] border border-[var(--rail-line)] px-3 py-1.5 font-[family-name:var(--font-mono)] text-xs font-semibold tabular-nums text-[var(--text-on-rail)] hover:bg-[var(--rail-hover)]"
           >
             <ClockIcon className="size-4" />
             {formatClock(secondsLeft)} {running ? "" : "· paused"}

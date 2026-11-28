@@ -3,23 +3,28 @@
 import Link from "next/link";
 import type { ReactElement } from "react";
 import { PlusIcon } from "@/components/lessons/lesson-icons";
-import type { LessonStage, LessonWorkspace } from "@/lib/lesson-studio";
+import type {
+  StudioWorkflowStage,
+  LessonWorkspace,
+} from "@/lib/lesson-studio";
+import { isStudioOpened } from "@/lib/lesson-studio";
 
 interface LessonStudioRailProps {
   lessons: LessonWorkspace[];
   activeLessonId: string | null;
-  currentStage: LessonStage;
+  currentStage: StudioWorkflowStage;
   canJumpToPlan: boolean;
+  canJumpToPreview: boolean;
   canJumpToStudio: boolean;
   teacherName?: string | null;
   onSignOut?: () => void;
   onStartNew: () => void;
-  onJumpStage: (stage: "setup" | "review_plan" | "studio") => void;
+  onJumpStage: (stage: StudioWorkflowStage) => void;
   onSelectLesson: (lessonId: string) => void;
 }
 
 const ROW =
-  "flex min-h-[38px] w-full items-center gap-2.5 rounded-[var(--rounded-xs)] px-3 py-2 text-left text-sm transition-colors coarse:min-h-[44px]";
+  "flex min-h-11 w-full items-center gap-2.5 rounded-[var(--rounded-xs)] px-3 py-2 text-left text-sm transition-colors";
 const ROW_IDLE =
   "text-[var(--text-on-rail)] hover:bg-[var(--rail-hover)] active:bg-[var(--rail-hover)]";
 const ROW_ACTIVE =
@@ -27,11 +32,32 @@ const ROW_ACTIVE =
 const ROW_DISABLED =
   "cursor-not-allowed text-[var(--text-on-rail-muted)] opacity-55";
 
+const lessonRailHint = (lesson: LessonWorkspace): string => {
+  const hasMaterials =
+    lesson.slides.length > 0 ||
+    lesson.questions.length > 0 ||
+    lesson.homework.length > 0;
+  if (lesson.stage === "review_plan" || lesson.stage === "generating_plan") {
+    return "Plan draft";
+  }
+  if (lesson.stage === "generating_materials") {
+    return "Building materials";
+  }
+  if (hasMaterials && !isStudioOpened(lesson.id)) {
+    return "Preview ready";
+  }
+  if (hasMaterials) {
+    return `${lesson.slides.length} slides · ${lesson.questions.length} Qs`;
+  }
+  return "Plan draft";
+};
+
 export const LessonStudioRail = ({
   lessons,
   activeLessonId,
   currentStage,
   canJumpToPlan,
+  canJumpToPreview,
   canJumpToStudio,
   teacherName,
   onSignOut,
@@ -49,7 +75,7 @@ export const LessonStudioRail = ({
           <button
             type="button"
             onClick={onSignOut}
-            className="mt-1 text-xs font-medium text-[var(--text-on-rail-muted)] underline-offset-2 hover:underline"
+            className="-mx-3 mt-0.5 inline-flex min-h-11 items-center px-3 text-sm font-medium text-[var(--text-on-rail-muted)] underline-offset-2 hover:underline"
           >
             Sign out
           </button>
@@ -65,7 +91,6 @@ export const LessonStudioRail = ({
       <span>New lesson</span>
     </button>
 
-    {/* Quick Stage Jumps */}
     <div className="mt-4 border-t border-[var(--rail-hover)] pt-4">
       <p className="px-3 pb-1.5 text-xs font-medium text-[var(--text-on-rail-muted)]">
         Workflow stages
@@ -105,6 +130,25 @@ export const LessonStudioRail = ({
         <li>
           <button
             type="button"
+            disabled={!canJumpToPreview}
+            onClick={() => onJumpStage("preview")}
+            className={`${ROW} ${
+              !canJumpToPreview
+                ? ROW_DISABLED
+                : currentStage === "preview"
+                  ? ROW_ACTIVE
+                  : ROW_IDLE
+            }`}
+          >
+            <span className="font-[family-name:var(--font-mono)] text-xs tabular-nums">
+              3.
+            </span>
+            <span>Preview</span>
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
             disabled={!canJumpToStudio}
             onClick={() => onJumpStage("studio")}
             className={`${ROW} ${
@@ -116,7 +160,7 @@ export const LessonStudioRail = ({
             }`}
           >
             <span className="font-[family-name:var(--font-mono)] text-xs tabular-nums">
-              3.
+              4.
             </span>
             <span>Teaching studio</span>
           </button>
@@ -128,6 +172,11 @@ export const LessonStudioRail = ({
       <p className="px-3 pb-1.5 text-xs font-medium text-[var(--text-on-rail-muted)]">
         Saved lessons
       </p>
+      {lessons.length === 0 ? (
+        <p className="px-3 py-2 text-sm text-[var(--text-on-rail-muted)]">
+          No saved lessons yet. Start with a textbook unit.
+        </p>
+      ) : null}
       <ol className="flex flex-col gap-1">
         {lessons.map((lesson) => {
           const active = lesson.id === activeLessonId && currentStage !== "setup";
@@ -163,9 +212,7 @@ export const LessonStudioRail = ({
                     ? `${lesson.minutesPerLesson} min`
                     : `${lesson.amountOfLessons} × ${lesson.minutesPerLesson}m`}
                   {" · "}
-                  {lesson.stage === "review_plan"
-                    ? "Plan draft"
-                    : `${lesson.slides.length} slides · ${lesson.questions.length} Qs`}
+                  {lessonRailHint(lesson)}
                 </span>
               </button>
             </li>
