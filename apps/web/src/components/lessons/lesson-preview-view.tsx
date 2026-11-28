@@ -2,7 +2,7 @@
 
 import { Button } from "@oku/ui";
 import Link from "next/link";
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useState } from "react";
 import { ChoiceShapeMark } from "@/components/lessons/lesson-icons";
 import { QrMatrix } from "@/components/lessons/qr-matrix";
@@ -12,12 +12,14 @@ interface LessonPreviewViewProps {
   workspace: LessonWorkspace;
   onBackToPlan: () => void;
   onOpenStudio: () => void;
+  toolbar?: ReactNode;
 }
 
 export const LessonPreviewView = ({
   workspace,
   onBackToPlan,
   onOpenStudio,
+  toolbar,
 }: LessonPreviewViewProps): ReactElement => {
   const [slideIndex, setSlideIndex] = useState(0);
   const slides = workspace.slides ?? [];
@@ -32,30 +34,31 @@ export const LessonPreviewView = ({
 
   return (
     <div className="grid gap-8">
-      <header className="flex flex-col gap-4 border-b border-[var(--border-hairline)] pb-5 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <button
-            type="button"
-            onClick={onBackToPlan}
-            className="inline-flex min-h-11 items-center text-sm text-[var(--text-secondary)] hover:text-[var(--accent-ink)]"
-          >
-            Back to plan
-          </button>
-          <h2 className="mt-2 text-2xl font-bold tracking-[-0.02em] sm:text-3xl">
-            Preview materials
-          </h2>
-          <p className="mt-1.5 font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--text-secondary)]">
-            {workspace.title} · {slides.length} slides · {questions.length}{" "}
-            questions · {homework.length} homework
-          </p>
-          <p className="mt-2 max-w-[65ch] text-sm leading-6 text-[var(--text-secondary)]">
-            Skim what the model built. Open Teaching Studio when you are ready
-            to edit details or present.
-          </p>
+      <header className="border-b border-[var(--border-hairline)] pb-4">
+        <button
+          type="button"
+          onClick={onBackToPlan}
+          className="inline-flex min-h-11 items-center text-sm text-[var(--text-secondary)] hover:text-[var(--accent-ink)]"
+        >
+          Back to plan
+        </button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 sm:flex-1">
+            <h2 className="text-balance text-2xl font-bold tracking-[-0.02em] sm:text-3xl">
+              {workspace.title}
+            </h2>
+            <p className="mt-2 font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--text-secondary)]">
+              {slides.length} slides · {questions.length} questions ·{" "}
+              {homework.length} homework
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:max-w-xl sm:justify-end">
+            {toolbar}
+            <Button size="sm" onClick={onOpenStudio}>
+              Open teaching studio
+            </Button>
+          </div>
         </div>
-        <Button className="w-full sm:w-auto" onClick={onOpenStudio}>
-          Open teaching studio
-        </Button>
       </header>
 
       {slides.length > 0 ? (
@@ -64,7 +67,7 @@ export const LessonPreviewView = ({
             Slides
           </h3>
           <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
-            <ol className="order-2 flex snap-x snap-mandatory overflow-x-auto rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)] lg:order-1 lg:block lg:max-h-[28rem] lg:snap-none lg:overflow-y-auto">
+            <ol className="order-2 flex snap-x snap-mandatory overflow-x-auto rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)] lg:order-1 lg:block lg:max-h-[28rem] lg:self-start lg:snap-none lg:overflow-y-auto">
               {slides.map((slide, idx) => {
                 const active = idx === safeIndex;
                 return (
@@ -96,12 +99,10 @@ export const LessonPreviewView = ({
             </ol>
 
             {activeSlide ? (
-              <div className="order-1 flex flex-col justify-between border border-[var(--border-hairline)] border-t-4 border-t-[var(--accent-primary)] bg-[var(--bg-surface)] p-5 sm:aspect-video sm:p-9 lg:order-2">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-hairline)] pb-3">
-                  <span className="font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--text-secondary)]">
-                    Slide {safeIndex + 1} of {slides.length}
-                  </span>
-                </div>
+              <div className="order-1 flex flex-col border border-[var(--border-hairline)] border-t-4 border-t-[var(--accent-primary)] bg-[var(--bg-surface)] p-5 sm:p-8 lg:order-2">
+                <p className="font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--text-secondary)]">
+                  Slide {safeIndex + 1} of {slides.length}
+                </p>
 
                 {activeSlide.kind === "quiz_launch" ? (
                   <div className="my-auto grid items-center gap-6 py-4 sm:grid-cols-[minmax(0,1fr)_auto]">
@@ -169,18 +170,20 @@ export const LessonPreviewView = ({
 
       {questions.length > 0 ? (
         <section aria-labelledby="preview-quiz-heading">
-          <h3 id="preview-quiz-heading" className="text-lg font-semibold">
-            Student quiz
-          </h3>
-          <p className="mt-1 text-sm text-[var(--text-secondary)]">
-            Student link{" "}
-            <Link
-              href={sharePath}
-              className="font-[family-name:var(--font-mono)] text-[var(--accent-ink)] underline-offset-2 hover:underline"
-            >
-              {sharePath}
-            </Link>
-          </p>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h3 id="preview-quiz-heading" className="text-lg font-semibold">
+              Student quiz
+            </h3>
+            <p className="text-sm text-[var(--text-secondary)]">
+              Student link{" "}
+              <Link
+                href={sharePath}
+                className="font-[family-name:var(--font-mono)] text-[var(--accent-ink)] underline-offset-2 hover:underline"
+              >
+                {sharePath}
+              </Link>
+            </p>
+          </div>
           <ol className="mt-4 divide-y divide-[var(--border-hairline)] rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)]">
             {questions.map((question, idx) => {
               const choices =
@@ -279,15 +282,11 @@ export const LessonPreviewView = ({
         </section>
       ) : null}
 
-      <div className="flex flex-col gap-3 border-t border-[var(--border-hairline)] pt-5 sm:flex-row sm:flex-wrap sm:items-center">
-        <Button className="w-full sm:w-auto" onClick={onOpenStudio}>
+      <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-hairline)] pt-4">
+        <Button size="sm" onClick={onOpenStudio}>
           Open teaching studio
         </Button>
-        <Button
-          variant="secondary"
-          className="w-full sm:w-auto"
-          onClick={onBackToPlan}
-        >
+        <Button variant="secondary" size="sm" onClick={onBackToPlan}>
           Back to plan
         </Button>
       </div>

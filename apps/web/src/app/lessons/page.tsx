@@ -1132,16 +1132,16 @@ const LessonStudioContent = (): ReactElement => {
         </div>
       ) : showPreview && activeWorkspace ? (
         <div key={`stage-preview-${activeWorkspace.id}`} className="oku-stage-enter">
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <LessonAccessControls
-              workspace={activeWorkspace}
-              onAccessChange={handleAccessChange}
-            />
-          </div>
           <LessonPreviewView
             workspace={activeWorkspace}
             onBackToPlan={() => handleJumpStage("review_plan")}
             onOpenStudio={openTeachingStudio}
+            toolbar={
+              <LessonAccessControls
+                workspace={activeWorkspace}
+                onAccessChange={handleAccessChange}
+              />
+            }
           />
         </div>
       ) : showStudio && activeWorkspace ? (

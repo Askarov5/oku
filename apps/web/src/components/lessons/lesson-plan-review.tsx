@@ -9,7 +9,7 @@ import {
   fieldClass,
 } from "@oku/ui";
 import type { ReactElement } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PlusIcon, SparklesIcon } from "@/components/lessons/lesson-icons";
 import type { LessonPlanBlock, LessonWorkspace } from "@/lib/lesson-studio";
 import {
@@ -25,6 +25,54 @@ import {
 
 type DeliverableToggleKey = "slides" | "kahootTest" | "homework";
 type DeliverableCountKey = "slideCount" | "quizCount" | "homeworkCount";
+
+interface GrowingFieldProps {
+  id?: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  className: string;
+}
+
+const GrowingField = ({
+  id,
+  label,
+  value,
+  onChange,
+  className,
+}: GrowingFieldProps): ReactElement => {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const fit = (): void => {
+      node.style.height = "0px";
+      node.style.height = `${node.scrollHeight}px`;
+    };
+    fit();
+    let width = node.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (node.clientWidth === width) return;
+      width = node.clientWidth;
+      fit();
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      id={id}
+      rows={1}
+      aria-label={label}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className={className}
+    />
+  );
+};
 
 interface LessonPlanReviewProps {
   workspace: LessonWorkspace;
@@ -146,7 +194,10 @@ export const LessonPlanReview = ({
       }}
     >
     <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
-      <section aria-labelledby="review-plan-heading">
+      <section
+        aria-labelledby="lesson-title-input"
+        aria-describedby="review-plan-meta"
+      >
         <button
           type="button"
           onClick={onBackToSetup}
@@ -156,18 +207,15 @@ export const LessonPlanReview = ({
           Edit unit &amp; angle
         </button>
 
-        <label htmlFor="lesson-title-input" className="sr-only">
-          Lesson title
-        </label>
-        <input
+        <GrowingField
           id="lesson-title-input"
-          type="text"
+          label="Lesson title"
           value={workspace.title}
-          onChange={(event) => onUpdateTitle(event.target.value)}
-          className="mt-2 w-full border-0 bg-transparent text-2xl font-bold tracking-[-0.02em] outline-none focus:ring-0"
+          onChange={onUpdateTitle}
+          className="mt-2 w-full resize-none overflow-hidden border-0 bg-transparent text-2xl font-bold leading-tight tracking-[-0.02em]"
         />
         <p
-          id="review-plan-heading"
+          id="review-plan-meta"
           className="mt-1 font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--text-secondary)]"
         >
           {workspace.unitTitle} · {workspace.audience} ·{" "}
@@ -185,7 +233,7 @@ export const LessonPlanReview = ({
         ) : null}
 
         {workspace.creativeAngle.trim() ? (
-          <p className="mt-3 rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)] px-4 py-3 text-sm leading-6">
+          <p className="mt-3 max-w-[65ch] text-sm leading-6">
             <span className="font-semibold">Active angle: </span>
             {workspace.creativeAngle}
           </p>
@@ -219,7 +267,7 @@ export const LessonPlanReview = ({
           </div>
         ) : null}
 
-        <ol className="mt-6 rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)]">
+        <ol className="mt-8 rounded-[var(--rounded-xs)] border border-[var(--border-hairline)] bg-[var(--bg-surface)]">
           {visibleBlocks.map((block, idx) => {
             const lineEstimate = Math.max(
               4,
@@ -234,26 +282,23 @@ export const LessonPlanReview = ({
                     : "p-5"
                 }
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex flex-col gap-2 2xl:flex-row 2xl:items-center 2xl:justify-between">
                   <div className="flex min-w-0 flex-1 items-center gap-3">
-                    <span className="font-[family-name:var(--font-mono)] text-xs font-semibold tabular-nums text-[var(--text-secondary)]">
+                    <span className="w-6 shrink-0 font-[family-name:var(--font-mono)] text-xs font-semibold tabular-nums text-[var(--text-secondary)]">
                       {idx + 1}.
                     </span>
-                    <input
-                      type="text"
-                      aria-label={`Section ${idx + 1} title`}
+                    <GrowingField
+                      label={`Section ${idx + 1} title`}
                       value={block.title}
-                      onChange={(event) =>
-                        onUpdatePlanBlock(block.id, {
-                          title: event.target.value,
-                        })
+                      onChange={(next) =>
+                        onUpdatePlanBlock(block.id, { title: next })
                       }
-                      className={`${fieldClass} font-semibold`}
+                      className={`${fieldClass} min-w-0 resize-none overflow-hidden font-semibold leading-5`}
                     />
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    <label className="inline-flex items-center gap-1.5 font-[family-name:var(--font-mono)] text-xs text-[var(--text-secondary)]">
+                  <div className="flex items-center gap-2 pl-9 2xl:shrink-0 2xl:pl-0">
+                    <label className="inline-flex items-center gap-2 font-[family-name:var(--font-mono)] text-sm text-[var(--text-secondary)]">
                       <input
                         type="number"
                         min={1}
@@ -268,13 +313,14 @@ export const LessonPlanReview = ({
                             ),
                           })
                         }
-                        className="w-16 rounded-[var(--rounded-xs)] border border-[var(--border-control)] bg-[var(--bg-canvas)] px-2 py-1.5 text-right font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--text-primary)] coarse:min-h-[44px]"
+                        className="w-16 rounded-[var(--rounded-xs)] border border-[var(--border-control)] bg-[var(--bg-canvas)] px-2 py-2 text-right font-[family-name:var(--font-mono)] text-sm tabular-nums text-[var(--text-primary)] coarse:min-h-[44px]"
                       />
                       <span>min</span>
                     </label>
                     <Button
                       variant="ghost"
-                      size="icon"
+                      size="sm"
+                      className="px-2 coarse:min-h-11 coarse:min-w-11"
                       aria-label="Move section up"
                       disabled={idx === 0}
                       onClick={() => moveBlock(block.id, -1)}
@@ -283,7 +329,8 @@ export const LessonPlanReview = ({
                     </Button>
                     <Button
                       variant="ghost"
-                      size="icon"
+                      size="sm"
+                      className="px-2 coarse:min-h-11 coarse:min-w-11"
                       aria-label="Move section down"
                       disabled={idx >= visibleBlocks.length - 1}
                       onClick={() => moveBlock(block.id, 1)}
@@ -292,7 +339,8 @@ export const LessonPlanReview = ({
                     </Button>
                     <Button
                       variant="ghost"
-                      size="icon"
+                      size="sm"
+                      className="px-2 coarse:min-h-11 coarse:min-w-11"
                       aria-label="Delete section"
                       disabled={visibleBlocks.length <= 1}
                       onClick={() => deleteBlock(block.id)}
@@ -322,7 +370,7 @@ export const LessonPlanReview = ({
                 <div className="mt-3">
                   <label
                     htmlFor={`note-${block.id}`}
-                    className="block text-xs font-semibold text-[var(--text-secondary)]"
+                    className="block text-sm font-semibold text-[var(--text-secondary)]"
                   >
                     Classroom cue
                   </label>
@@ -335,7 +383,7 @@ export const LessonPlanReview = ({
                         teacherNote: event.target.value,
                       })
                     }
-                    className={`${fieldClass} mt-1.5 text-sm leading-5`}
+                    className={`${fieldClass} mt-2 text-sm leading-5`}
                   />
                 </div>
               </li>
@@ -358,7 +406,7 @@ export const LessonPlanReview = ({
         <h3 id="approve-materials-heading" className="text-lg font-semibold">
           Generate teaching materials
         </h3>
-        <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">
+        <p className="mt-2 max-w-[40ch] text-sm leading-5 text-[var(--text-secondary)]">
           Checked items are built from this plan, then open in Preview before
           Teaching Studio.
         </p>
@@ -375,7 +423,7 @@ export const LessonPlanReview = ({
               Slides &amp; classroom visuals
             </label>
             {workspace.deliverables.slides ? (
-              <label className="ml-9 flex items-center justify-between gap-3 text-xs text-[var(--text-secondary)]">
+              <label className="ml-9 flex items-center justify-between gap-3 text-sm text-[var(--text-secondary)]">
                 <span>Teaching slides</span>
                 <input
                   type="number"
@@ -412,7 +460,7 @@ export const LessonPlanReview = ({
               Student quiz (shareable &amp; auto-graded)
             </label>
             {workspace.deliverables.kahootTest ? (
-              <label className="ml-9 flex items-center justify-between gap-3 text-xs text-[var(--text-secondary)]">
+              <label className="ml-9 flex items-center justify-between gap-3 text-sm text-[var(--text-secondary)]">
                 <span>Quiz questions</span>
                 <input
                   type="number"
@@ -449,7 +497,7 @@ export const LessonPlanReview = ({
               Homework practice &amp; key
             </label>
             {workspace.deliverables.homework ? (
-              <label className="ml-9 flex items-center justify-between gap-3 text-xs text-[var(--text-secondary)]">
+              <label className="ml-9 flex items-center justify-between gap-3 text-sm text-[var(--text-secondary)]">
                 <span>Practice items</span>
                 <input
                   type="number"
