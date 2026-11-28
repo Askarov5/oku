@@ -4,6 +4,7 @@ import {
   bundleToWorkspace,
   insertAttemptBundle,
   latestAttemptsLeaderboard,
+  lessonAllowsClassShare,
   loadLessonByShareCode,
   revealOneResponse,
   scoreAttempt,
@@ -32,7 +33,7 @@ export const POST = async (
 
   const { shareCode } = await context.params;
   const bundle = await loadLessonByShareCode(shareCode);
-  if (!bundle) {
+  if (!bundle || !lessonAllowsClassShare(bundle.lesson)) {
     return NextResponse.json({ error: "Quiz code not found" }, { status: 404 });
   }
 

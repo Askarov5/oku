@@ -205,6 +205,7 @@ const run = async (): Promise<void> => {
       grounding: null,
       conceptId: null,
       isSample: true,
+      access: "public",
     })
     .returning();
 

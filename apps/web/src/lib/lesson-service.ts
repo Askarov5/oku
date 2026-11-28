@@ -23,6 +23,7 @@ import { and, asc, desc, eq, or } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { getDb } from "./db";
 import type {
+  LessonAccess as LessonVisibility,
   LessonPlanBlock,
   LessonSlide,
   LessonStage,
@@ -32,7 +33,11 @@ import type {
   StudioBookOption,
   StudioUnitOption,
 } from "./lesson-studio";
-import { createPrebuiltSoccerLesson, gradeFromRatio } from "./lesson-studio";
+import {
+  createPrebuiltSoccerLesson,
+  gradeFromRatio,
+  lessonHasMaterials,
+} from "./lesson-studio";
 import {
   buildReveal,
   grade,
@@ -251,6 +256,7 @@ export const bundleToWorkspace = (
     id: lesson.id,
     shareCode: lesson.shareCode,
     title: lesson.title,
+    access: (lesson.access ?? "draft") as LessonVisibility,
     isSample: lesson.isSample,
     bookId: lesson.bookId ?? lesson.unitKey,
     bookTitle: lesson.bookTitle,
@@ -313,6 +319,36 @@ export const teacherCanMutate = (
   if (lesson.isSample) return false;
   return lesson.teacherId === teacherId;
 };
+
+export const lessonAllowsClassShare = (
+  lesson: { access: LessonVisibility; isSample: boolean },
+): boolean => lesson.isSample || lesson.access === "private" || lesson.access === "public";
+
+export const lessonAllowsPublicView = (
+  lesson: { access: LessonVisibility; isSample: boolean },
+): boolean => lesson.isSample || lesson.access === "public";
+
+export const deleteLesson = async (lessonId: string): Promise<void> => {
+  const db = getDb();
+  await db.delete(lessons).where(eq(lessons.id, lessonId));
+};
+
+export const setLessonAccess = async (
+  lessonId: string,
+  access: LessonVisibility,
+): Promise<LessonWorkspace | null> => {
+  const db = getDb();
+  await db
+    .update(lessons)
+    .set({ access, updatedAt: new Date() })
+    .where(eq(lessons.id, lessonId));
+  const bundle = await loadLessonBundle(lessonId);
+  return bundle ? bundleToWorkspace(bundle) : null;
+};
+
+export const workspaceHasMaterials = (
+  workspace: Pick<LessonWorkspace, "slides" | "questions" | "homework">,
+): boolean => lessonHasMaterials(workspace);
 
 export const hasActiveJob = async (lessonId: string): Promise<boolean> => {
   const db = getDb();
@@ -559,6 +595,10 @@ export const ensureSampleLesson = async (): Promise<void> => {
 
   if (existing.length > 0) {
     const lessonId = existing[0]!.id;
+    await db
+      .update(lessons)
+      .set({ access: "public", updatedAt: new Date() })
+      .where(eq(lessons.id, lessonId));
     const homeworkRows = await db
       .select({ id: quizQuestions.id })
       .from(quizQuestions)
@@ -577,6 +617,7 @@ export const ensureSampleLesson = async (): Promise<void> => {
           slides: sample.slides,
           homework: [],
           planBlocks: sample.planBlocks,
+          access: "public",
           updatedAt: new Date(),
         })
         .where(eq(lessons.id, lessonId));
@@ -610,6 +651,7 @@ export const ensureSampleLesson = async (): Promise<void> => {
       grounding: null,
       conceptId: null,
       isSample: true,
+      access: "public",
     })
     .returning();
 

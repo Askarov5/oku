@@ -170,8 +170,8 @@ export const LessonPlanReview = ({
           id="review-plan-heading"
           className="mt-1 font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--text-secondary)]"
         >
-          {workspace.unitTitle} · {workspace.pageRangeLabel} ·{" "}
-          {workspace.audience} · {totalPlannedMinutes} min planned
+          {workspace.unitTitle} · {workspace.audience} ·{" "}
+          {totalPlannedMinutes} min planned
           {minutesWarning
             ? ` (target ${workspace.minutesPerLesson} min)`
             : ""}
@@ -300,27 +300,6 @@ export const LessonPlanReview = ({
                       <TrashIcon />
                     </Button>
                   </div>
-                </div>
-
-                <div className="mt-3">
-                  <label
-                    htmlFor={`page-${block.id}`}
-                    className="block text-xs font-semibold text-[var(--text-secondary)]"
-                  >
-                    Page reference
-                  </label>
-                  <input
-                    id={`page-${block.id}`}
-                    type="text"
-                    value={block.pageRef ?? ""}
-                    onChange={(event) =>
-                      onUpdatePlanBlock(block.id, {
-                        pageRef: event.target.value.trim() || null,
-                      })
-                    }
-                    placeholder="e.g. pp. 42–46"
-                    className={`${fieldClass} mt-1.5 font-[family-name:var(--font-mono)] text-sm`}
-                  />
                 </div>
 
                 <div className="mt-3">

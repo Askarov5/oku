@@ -100,7 +100,6 @@ export const LessonPreviewView = ({
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-hairline)] pb-3">
                   <span className="font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--text-secondary)]">
                     Slide {safeIndex + 1} of {slides.length}
-                    {activeSlide.pageRef ? ` · ${activeSlide.pageRef}` : ""}
                   </span>
                 </div>
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   applyLessonPatch,
   bundleToWorkspace,
+  deleteLesson,
   hasActiveJob,
   loadLessonAccess,
   loadLessonBundle,
@@ -71,5 +72,29 @@ export const PATCH = async (
     });
   }
 
+  return NextResponse.json({ ok: true });
+};
+
+export const DELETE = async (
+  request: Request,
+  context: RouteContext,
+): Promise<NextResponse> => {
+  const auth = await requireUser(request, "teacher");
+  if ("error" in auth) return auth.error;
+
+  const { id } = await context.params;
+  const access = await loadLessonAccess(id);
+  if (!access || !teacherCanMutate(access, auth.user.id)) {
+    return NextResponse.json(
+      {
+        error: access?.isSample
+          ? "Sample lesson is read-only"
+          : "Lesson not found",
+      },
+      { status: access ? 403 : 404 },
+    );
+  }
+
+  await deleteLesson(id);
   return NextResponse.json({ ok: true });
 };

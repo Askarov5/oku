@@ -126,6 +126,7 @@ export const POST = async (request: Request): Promise<NextResponse> => {
       grounding,
       conceptId: null,
       isSample: false,
+      access: "draft",
     })
     .returning();
 

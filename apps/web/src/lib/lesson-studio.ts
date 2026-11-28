@@ -17,6 +17,55 @@ export type StudioWorkflowStage =
   | "preview"
   | "studio";
 
+export type LessonAccess = "draft" | "private" | "public";
+
+export type StudioTab = "book" | "slides" | "plan" | "kahoot" | "homework";
+
+export const lessonHasMaterials = (lesson: {
+  slides?: unknown[];
+  questions?: unknown[];
+  homework?: unknown[];
+}): boolean =>
+  (lesson.slides?.length ?? 0) > 0 ||
+  (lesson.questions?.length ?? 0) > 0 ||
+  (lesson.homework?.length ?? 0) > 0;
+
+export const accessLabel = (access: LessonAccess): string => {
+  if (access === "private") return "Private";
+  if (access === "public") return "Public";
+  return "Draft";
+};
+
+export const stageToUrlParam = (
+  stage: StudioWorkflowStage,
+): "plan" | "preview" | "studio" | null => {
+  if (stage === "review_plan") return "plan";
+  if (stage === "preview") return "preview";
+  if (stage === "studio") return "studio";
+  return null;
+};
+
+export const urlParamToStage = (
+  value: string | null,
+): StudioWorkflowStage | null => {
+  if (value === "plan") return "review_plan";
+  if (value === "preview") return "preview";
+  if (value === "studio") return "studio";
+  return null;
+};
+
+export const tabToUrlParam = (tab: StudioTab): string =>
+  tab === "kahoot" ? "quiz" : tab;
+
+export const urlParamToTab = (value: string | null): StudioTab | null => {
+  if (value === "book") return "book";
+  if (value === "slides") return "slides";
+  if (value === "plan") return "plan";
+  if (value === "quiz" || value === "kahoot") return "kahoot";
+  if (value === "homework") return "homework";
+  return null;
+};
+
 const STUDIO_OPENED_KEY = "oku-lesson-studio-opened-v1";
 
 export const isStudioOpened = (lessonId: string): boolean => {
@@ -187,6 +236,13 @@ export interface LessonSlide {
   speakerNotes: string;
 }
 
+export const slideKindLabel = (kind: LessonSlideKind | string): string => {
+  if (kind === "quiz_launch") return "Quiz";
+  if (kind === "uploaded_media") return "Upload";
+  if (kind === "worked_example") return "Example";
+  return "Concept";
+};
+
 /** @deprecated Prefer QuizItem from `@/lib/quiz`. Kept for gradual migration. */
 export interface KahootChoice {
   id: string;
@@ -234,6 +290,7 @@ export interface LessonWorkspace {
   id: string;
   shareCode: string;
   title: string;
+  access: LessonAccess;
   isSample?: boolean;
   bookId: string;
   bookTitle: string;
@@ -1078,6 +1135,7 @@ export const createPrebuiltSoccerLesson = (): LessonWorkspace => {
     id: "lesson-soccer-kinetic",
     shareCode,
     title: "Kinetic Energy: The Physics of a Free Kick",
+    access: "public",
     isSample: true,
     bookId: book.id,
     bookTitle: book.title,
@@ -1153,11 +1211,16 @@ export const createPrebuiltSoccerLesson = (): LessonWorkspace => {
 const STORAGE_KEY = "oku-lesson-studio-v1";
 
 const normalizeStoredLesson = (item: LessonWorkspace): LessonWorkspace => {
+  const withAccess: LessonWorkspace = {
+    ...item,
+    access: item.access ?? (item.isSample ? "public" : "draft"),
+  };
   if (item.id !== "lesson-soccer-kinetic") {
-    return item;
+    return withAccess;
   }
   return {
-    ...item,
+    ...withAccess,
+    access: "public",
     isSample: true,
     leaderboard: item.leaderboard.map((row) =>
       row.id.startsWith("lb-1") ||

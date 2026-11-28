@@ -258,6 +258,12 @@ export const lessonStageEnum = pgEnum("lesson_stage", [
   "failed",
 ]);
 
+export const lessonAccessEnum = pgEnum("lesson_access", [
+  "draft",
+  "private",
+  "public",
+]);
+
 export const lessonJobKindEnum = pgEnum("lesson_job_kind", [
   "plan",
   "materials",
@@ -460,6 +466,7 @@ export const lessons = pgTable(
     grounding: jsonb("grounding").$type<LessonGroundingJson | null>(),
     conceptId: text("concept_id"),
     isSample: boolean("is_sample").notNull().default(false),
+    access: lessonAccessEnum("access").notNull().default("draft"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

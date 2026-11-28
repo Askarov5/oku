@@ -7,7 +7,7 @@ import type {
   StudioWorkflowStage,
   LessonWorkspace,
 } from "@/lib/lesson-studio";
-import { isStudioOpened } from "@/lib/lesson-studio";
+import { accessLabel, isStudioOpened } from "@/lib/lesson-studio";
 
 interface LessonStudioRailProps {
   lessons: LessonWorkspace[];
@@ -21,6 +21,7 @@ interface LessonStudioRailProps {
   onStartNew: () => void;
   onJumpStage: (stage: StudioWorkflowStage) => void;
   onSelectLesson: (lessonId: string) => void;
+  onDeleteLesson?: (lessonId: string) => void;
 }
 
 const ROW =
@@ -64,6 +65,7 @@ export const LessonStudioRail = ({
   onStartNew,
   onJumpStage,
   onSelectLesson,
+  onDeleteLesson,
 }: LessonStudioRailProps): ReactElement => (
   <nav aria-label="Lesson Studio" className="flex flex-col">
     {teacherName ? (
@@ -180,28 +182,27 @@ export const LessonStudioRail = ({
       <ol className="flex flex-col gap-1">
         {lessons.map((lesson) => {
           const active = lesson.id === activeLessonId && currentStage !== "setup";
+          const access = lesson.access ?? (lesson.isSample ? "public" : "draft");
           return (
-            <li key={lesson.id}>
+            <li key={lesson.id} className="group relative">
               <button
                 type="button"
                 onClick={() => onSelectLesson(lesson.id)}
-                className={`${ROW} ${active ? ROW_ACTIVE : ROW_IDLE} flex-col items-start gap-1`}
+                className={`${ROW} ${active ? ROW_ACTIVE : ROW_IDLE} flex-col items-start gap-1 pr-10`}
               >
                 <span className="flex w-full items-start justify-between gap-2">
                   <span className="line-clamp-2 leading-snug">
                     {lesson.title}
                   </span>
-                  {lesson.isSample ? (
-                    <span
-                      className={`shrink-0 rounded-[var(--rounded-xs)] border px-1.5 py-0.5 font-[family-name:var(--font-mono)] text-xs ${
-                        active
-                          ? "border-current"
-                          : "border-[var(--rail-line)] text-[var(--text-on-rail-muted)]"
-                      }`}
-                    >
-                      Sample
-                    </span>
-                  ) : null}
+                  <span
+                    className={`shrink-0 rounded-[var(--rounded-xs)] border px-1.5 py-0.5 font-[family-name:var(--font-mono)] text-xs ${
+                      active
+                        ? "border-current"
+                        : "border-[var(--rail-line)] text-[var(--text-on-rail-muted)]"
+                    }`}
+                  >
+                    {lesson.isSample ? "Sample" : accessLabel(access)}
+                  </span>
                 </span>
                 <span
                   className={`font-[family-name:var(--font-mono)] text-xs tabular-nums ${
@@ -215,6 +216,24 @@ export const LessonStudioRail = ({
                   {lessonRailHint(lesson)}
                 </span>
               </button>
+              {!lesson.isSample && onDeleteLesson ? (
+                <button
+                  type="button"
+                  aria-label={`Delete ${lesson.title}`}
+                  title="Delete lesson"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDeleteLesson(lesson.id);
+                  }}
+                  className={`absolute right-1 top-1 inline-flex size-9 items-center justify-center rounded-[var(--rounded-xs)] text-xs opacity-70 transition-opacity hover:opacity-100 ${
+                    active
+                      ? "text-[var(--on-accent)] hover:bg-black/10"
+                      : "text-[var(--text-on-rail-muted)] hover:bg-[var(--rail-hover)]"
+                  }`}
+                >
+                  ×
+                </button>
+              ) : null}
             </li>
           );
         })}

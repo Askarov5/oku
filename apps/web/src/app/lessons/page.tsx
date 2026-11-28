@@ -2,13 +2,17 @@
 
 import { Button, ThemeShell, buttonClasses } from "@oku/ui";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { KeyboardEvent, ReactElement } from "react";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   AccountAuthForm,
   type AuthUser,
 } from "@/components/lessons/account-auth-form";
+import {
+  HoverLabel,
+  LessonAccessControls,
+} from "@/components/lessons/lesson-access-controls";
 import { LessonHomeworkPanel } from "@/components/lessons/lesson-homework-panel";
 import { LessonBookPanel } from "@/components/lessons/lesson-book-panel";
 import {
@@ -27,11 +31,13 @@ import { LessonSlidesPanel } from "@/components/lessons/lesson-slides-panel";
 import { LessonStudioRail } from "@/components/lessons/lesson-studio-rail";
 import { TeachPresenterModal } from "@/components/lessons/teach-presenter-modal";
 import type {
+  LessonAccess,
   LessonDeliverableFlags,
   LessonPlanBlock,
   LessonSetupDraft,
   LessonWorkspace,
   StudioBookOption,
+  StudioTab,
   StudioWorkflowStage,
 } from "@/lib/lesson-studio";
 import {
@@ -39,12 +45,15 @@ import {
   DEFAULT_QUIZ_COUNT,
   DEFAULT_SLIDE_COUNT,
   SAMPLE_STUDIO_BOOKS,
+  clearStudioOpened,
   defaultAudienceForBook,
   isStudioOpened,
   markStudioOpened,
+  stageToUrlParam,
+  tabToUrlParam,
+  urlParamToStage,
+  urlParamToTab,
 } from "@/lib/lesson-studio";
-
-type StudioTab = "book" | "slides" | "plan" | "kahoot" | "homework";
 
 type StudioSaveSection = "slides" | "questions" | "homework";
 
@@ -107,28 +116,43 @@ const initialSetupForBooks = (
 };
 
 const LessonStudioContent = (): ReactElement => {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const bookIdParam = searchParams.get("bookId");
   const unitParam = searchParams.get("unit");
   const lessonParam = searchParams.get("lesson");
+  const stageParam = searchParams.get("stage");
+  const tabParam = searchParams.get("tab");
+  const slideParam = searchParams.get("slide");
 
   const [teacher, setTeacher] = useState<AuthUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [books, setBooks] = useState<StudioBookOption[]>(SAMPLE_STUDIO_BOOKS);
   const [lessons, setLessons] = useState<LessonWorkspace[]>([]);
-  const [activeLessonId, setActiveLessonId] = useState<string | null>(null);
+  const [activeLessonId, setActiveLessonId] = useState<string | null>(
+    lessonParam,
+  );
   const [setupDraft, setSetupDraft] = useState<LessonSetupDraft>(() =>
     initialSetupForBooks(SAMPLE_STUDIO_BOOKS, bookIdParam, unitParam),
   );
-  const [studioTab, setStudioTab] = useState<StudioTab>("book");
+  const [studioTab, setStudioTab] = useState<StudioTab>(
+    () => urlParamToTab(tabParam) ?? "book",
+  );
+  const [slideIndex, setSlideIndex] = useState(() => {
+    const parsed = slideParam ? Number(slideParam) - 1 : 0;
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+  });
   const [generatingPlan, setGeneratingPlan] = useState(false);
   const [generatingMaterials, setGeneratingMaterials] = useState(false);
   const [presenterOpen, setPresenterOpen] = useState(false);
   const [presenterStart, setPresenterStart] = useState(0);
   const [studioNotice, setStudioNotice] = useState<string | null>(null);
+  const [lessonLoadFailed, setLessonLoadFailed] = useState(false);
   const [workflowOverride, setWorkflowOverride] =
-    useState<StudioWorkflowStage | null>(null);
+    useState<StudioWorkflowStage | null>(() => urlParamToStage(stageParam));
   const [studioOpenedTick, setStudioOpenedTick] = useState(0);
+  const urlHydrated = useRef(false);
   const [savingSection, setSavingSection] = useState<StudioSaveSection | null>(
     null,
   );
@@ -143,6 +167,7 @@ const LessonStudioContent = (): ReactElement => {
   const normalizeWorkspace = useCallback(
     (lesson: LessonWorkspace): LessonWorkspace => ({
       ...lesson,
+      access: lesson.access ?? (lesson.isSample ? "public" : "draft"),
       slides: lesson.slides ?? [],
       questions: lesson.questions ?? [],
       homework: lesson.homework ?? [],
@@ -155,15 +180,28 @@ const LessonStudioContent = (): ReactElement => {
   );
 
   const refreshLessons = useCallback(async (): Promise<LessonWorkspace[]> => {
-    const res = await fetch("/api/lessons");
-    if (!res.ok) return [];
+    let res: Response;
+    try {
+      res = await fetch("/api/lessons");
+    } catch {
+      throw new Error(
+        "Could not load your lessons. Check the connection and try again.",
+      );
+    }
+    if (res.status === 401) {
+      setTeacher(null);
+      throw new Error("Sign in again to open this lesson.");
+    }
+    if (!res.ok) {
+      throw new Error("Could not load your lessons. Try again.");
+    }
     const data = (await res.json()) as { lessons?: LessonWorkspace[] };
     const items = (Array.isArray(data.lessons) ? data.lessons : []).map(
       (lesson) => normalizeWorkspace(lesson),
     );
     setLessons(items);
     return items;
-  }, [normalizeWorkspace]);
+  }, [normalizeWorkspace, setTeacher]);
 
   useEffect(() => {
     let alive = true;
@@ -193,26 +231,63 @@ const LessonStudioContent = (): ReactElement => {
     };
   }, []);
 
+  const openLessonFromUrl = useCallback(async (): Promise<void> => {
+    try {
+      const items = await refreshLessons();
+      setLessonLoadFailed(false);
+      if (!lessonParam) {
+        setStudioNotice(null);
+        return;
+      }
+      const match = items.find((item) => item.id === lessonParam);
+      if (!match) {
+        setActiveLessonId(null);
+        setWorkflowOverride(null);
+        setStudioNotice(
+          "This lesson is no longer available. Start a new one below, or open a saved lesson.",
+        );
+        return;
+      }
+      setStudioNotice(null);
+      setActiveLessonId(match.id);
+      const stageFromUrl = urlParamToStage(stageParam);
+      if (stageFromUrl === "studio") {
+        markStudioOpened(match.id);
+        setStudioOpenedTick((value) => value + 1);
+      }
+      if (stageFromUrl) {
+        setWorkflowOverride(stageFromUrl);
+      }
+      const tabFromUrl = urlParamToTab(tabParam);
+      if (tabFromUrl) setStudioTab(tabFromUrl);
+      if (slideParam) {
+        const parsed = Number(slideParam) - 1;
+        if (Number.isFinite(parsed) && parsed >= 0) {
+          setSlideIndex(parsed);
+        }
+      }
+    } catch (error) {
+      setLessonLoadFailed(true);
+      setStudioNotice(
+        error instanceof Error
+          ? error.message
+          : "Could not load your lessons. Check the connection and try again.",
+      );
+    }
+  }, [lessonParam, refreshLessons, slideParam, stageParam, tabParam]);
+
   useEffect(() => {
-    if (!teacher) return;
+    if (!teacher || urlHydrated.current) return;
     let alive = true;
     const load = async (): Promise<void> => {
-      try {
-        const items = await refreshLessons();
-        if (!alive) return;
-        if (lessonParam) {
-          const match = items.find((item) => item.id === lessonParam);
-          if (match) setActiveLessonId(match.id);
-        }
-      } catch {
-        // Keep empty list when API is down.
-      }
+      await openLessonFromUrl();
+      if (alive) urlHydrated.current = true;
     };
     void load();
     return () => {
       alive = false;
     };
-  }, [teacher, lessonParam, refreshLessons]);
+  }, [teacher, openLessonFromUrl]);
 
   useEffect(() => {
     let active = true;
@@ -781,6 +856,44 @@ const LessonStudioContent = (): ReactElement => {
 
   const currentStage: StudioWorkflowStage = workflowOverride ?? derivedStage;
 
+  useEffect(() => {
+    if (!teacher || !urlHydrated.current) return;
+
+    const params = new URLSearchParams();
+    if (currentStage === "setup" || !activeLessonId) {
+      if (setupDraft.bookId) params.set("bookId", setupDraft.bookId);
+      params.set("unit", String(setupDraft.unitIndex + 1));
+    } else {
+      params.set("lesson", activeLessonId);
+      const stage = stageToUrlParam(currentStage);
+      if (stage) params.set("stage", stage);
+      if (currentStage === "studio") {
+        if (studioTab !== "book") {
+          params.set("tab", tabToUrlParam(studioTab));
+        }
+        if (studioTab === "slides" && slideIndex > 0) {
+          params.set("slide", String(slideIndex + 1));
+        }
+      }
+    }
+
+    const next = params.toString();
+    const current = searchParams.toString();
+    if (next === current) return;
+    router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+  }, [
+    teacher,
+    currentStage,
+    activeLessonId,
+    setupDraft.bookId,
+    setupDraft.unitIndex,
+    studioTab,
+    slideIndex,
+    pathname,
+    router,
+    searchParams,
+  ]);
+
   const handleJumpStage = (target: StudioWorkflowStage): void => {
     if (target === "setup") {
       if (activeWorkspace) {
@@ -825,6 +938,62 @@ const LessonStudioContent = (): ReactElement => {
     setActiveLessonId(null);
   };
 
+  const handleDeleteLesson = (lessonId: string): void => {
+    const target = lessons.find((item) => item.id === lessonId);
+    if (!target || target.isSample) return;
+    const confirmed = window.confirm(
+      `Delete “${target.title}”? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    void (async () => {
+      const res = await fetch(`/api/lessons/${lessonId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        setStudioNotice(data.error ?? "Could not delete lesson");
+        return;
+      }
+      clearStudioOpened(lessonId);
+      setLessons((prev) => prev.filter((item) => item.id !== lessonId));
+      if (activeLessonId === lessonId) {
+        setActiveLessonId(null);
+        setWorkflowOverride(null);
+      }
+    })();
+  };
+
+  const handleAccessChange = async (access: LessonAccess): Promise<void> => {
+    if (!activeWorkspace || activeWorkspace.isSample) return;
+    let res: Response;
+    try {
+      res = await fetch(`/api/lessons/${activeWorkspace.id}/access`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ access }),
+      });
+    } catch {
+      throw new Error(
+        "Could not change the status. Check the connection and try again.",
+      );
+    }
+    const data = (await res.json().catch(() => ({}))) as {
+      lesson?: LessonWorkspace;
+      error?: string;
+    };
+    if (res.status === 401) {
+      setTeacher(null);
+      throw new Error("Sign in again to change who can open this lesson.");
+    }
+    if (res.status === 404) {
+      throw new Error("This lesson is no longer available.");
+    }
+    if (!res.ok || !data.lesson) {
+      throw new Error(
+        data.error ?? "Could not change the status. Try again.",
+      );
+    }
+    upsertLesson(data.lesson);
+  };
+
   const rail = (
     <LessonStudioRail
       lessons={lessons}
@@ -851,6 +1020,7 @@ const LessonStudioContent = (): ReactElement => {
         setWorkflowOverride(null);
         setActiveLessonId(id);
         setStudioTab("book");
+        setSlideIndex(0);
         void (async () => {
           const res = await fetch(`/api/lessons/${id}`);
           if (!res.ok) return;
@@ -858,6 +1028,7 @@ const LessonStudioContent = (): ReactElement => {
           if (data.lesson) upsertLesson(data.lesson);
         })();
       }}
+      onDeleteLesson={handleDeleteLesson}
     />
   );
 
@@ -914,9 +1085,22 @@ const LessonStudioContent = (): ReactElement => {
             : studioNotice ?? ""}
       </p>
       {studioNotice ? (
-        <p className="mb-4 text-sm font-medium text-[var(--status-failed)]">
-          {studioNotice}
-        </p>
+        <div className="mb-6 flex max-w-lg flex-col items-start gap-2">
+          <p className="text-sm font-medium leading-5 text-[var(--status-failed)]">
+            {studioNotice}
+          </p>
+          {lessonLoadFailed ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                void openLessonFromUrl();
+              }}
+            >
+              Try again
+            </Button>
+          ) : null}
+        </div>
       ) : null}
       {showSetup ? (
         <div key="stage-setup" className="oku-stage-enter">
@@ -948,6 +1132,12 @@ const LessonStudioContent = (): ReactElement => {
         </div>
       ) : showPreview && activeWorkspace ? (
         <div key={`stage-preview-${activeWorkspace.id}`} className="oku-stage-enter">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <LessonAccessControls
+              workspace={activeWorkspace}
+              onAccessChange={handleAccessChange}
+            />
+          </div>
           <LessonPreviewView
             workspace={activeWorkspace}
             onBackToPlan={() => handleJumpStage("review_plan")}
@@ -956,10 +1146,10 @@ const LessonStudioContent = (): ReactElement => {
         </div>
       ) : showStudio && activeWorkspace ? (
         <div key={`stage-studio-${activeWorkspace.id}`} className="oku-stage-enter">
-          <header className="flex flex-col gap-4 border-b border-[var(--border-hairline)] pb-5 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <h2 className="break-words text-2xl font-bold tracking-[-0.02em] sm:text-3xl">
+          <header className="flex flex-col gap-4 border-b border-[var(--border-hairline)] pb-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 lg:flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-balance break-words text-2xl font-bold tracking-[-0.02em] sm:text-3xl">
                   {activeWorkspace.title}
                 </h2>
                 {activeWorkspace.isSample ? (
@@ -968,10 +1158,8 @@ const LessonStudioContent = (): ReactElement => {
                   </span>
                 ) : null}
               </div>
-              <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--text-secondary)]">
+              <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--text-secondary)]">
                 <span>{activeWorkspace.bookTitle}</span>
-                <span aria-hidden>·</span>
-                <span>{activeWorkspace.pageRangeLabel}</span>
                 <span aria-hidden>·</span>
                 <span>{activeWorkspace.audience}</span>
                 <span aria-hidden>·</span>
@@ -983,25 +1171,42 @@ const LessonStudioContent = (): ReactElement => {
               </p>
             </div>
 
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
-              {activeWorkspace.questions.length > 0 ? (
-                <Link
-                  href={`/play/${activeWorkspace.shareCode}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={`${buttonClasses({ variant: "ghost" })} w-full justify-center sm:w-auto`}
-                >
-                  <ExternalLinkIcon />
-                  Student quiz
-                  <span className="sr-only">, opens in a new tab</span>
-                </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <LessonAccessControls
+                workspace={activeWorkspace}
+                onAccessChange={handleAccessChange}
+              />
+              {activeWorkspace.questions.length > 0 &&
+              (activeWorkspace.access === "private" ||
+                activeWorkspace.access === "public" ||
+                activeWorkspace.isSample) ? (
+                <HoverLabel panel="Student quiz, opens in a new tab" align="end">
+                  <Link
+                    href={`/play/${activeWorkspace.shareCode}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Student quiz, opens in a new tab"
+                    className={buttonClasses({
+                      variant: "ghost",
+                      size: "sm",
+                      className: "px-2 coarse:min-h-11 coarse:min-w-11",
+                    })}
+                  >
+                    <ExternalLinkIcon />
+                  </Link>
+                </HoverLabel>
               ) : null}
-
               {activeWorkspace.slides.length > 0 ? (
-                <Button className="w-full sm:w-auto" onClick={() => openPresenter(0)}>
-                  <PlayIcon />
-                  Start teaching
-                </Button>
+                <HoverLabel panel="Start teaching" align="end">
+                  <Button
+                    size="sm"
+                    aria-label="Start teaching"
+                    onClick={() => openPresenter(0)}
+                  >
+                    <PlayIcon />
+                    <span className="hidden sm:inline">Teach</span>
+                  </Button>
+                </HoverLabel>
               ) : null}
             </div>
           </header>
@@ -1009,7 +1214,7 @@ const LessonStudioContent = (): ReactElement => {
           <div
             role="tablist"
             aria-label="Lesson materials"
-            className="-mx-4 mt-5 flex gap-2 overflow-x-auto border-b border-[var(--border-hairline)] px-4 pb-3 sm:mx-0 sm:px-0"
+            className="-mx-4 mt-4 flex gap-2 overflow-x-auto border-b border-[var(--border-hairline)] px-4 pb-3 sm:mx-0 sm:px-0"
             onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
               const order: StudioTab[] = ["book"];
               if (activeWorkspace.slides.length > 0) order.push("slides");
@@ -1160,6 +1365,8 @@ const LessonStudioContent = (): ReactElement => {
                 dirty={slidesDirty}
                 saving={savingSection === "slides"}
                 justSaved={savedFlashSection === "slides"}
+                selectedIndex={slideIndex}
+                onSelectedIndexChange={setSlideIndex}
                 onChangeSlides={(slides) =>
                   patchWorkspace(activeWorkspace.id, { slides })
                 }
@@ -1180,7 +1387,6 @@ const LessonStudioContent = (): ReactElement => {
                       </h3>
                       <span className="font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--text-secondary)]">
                         {block.minutes} min
-                        {block.pageRef ? ` · ${block.pageRef}` : ""}
                       </span>
                     </div>
                     <p className="mt-2 max-w-[65ch] text-sm leading-6">

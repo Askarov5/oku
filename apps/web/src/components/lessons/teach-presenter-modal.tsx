@@ -185,7 +185,6 @@ export const TeachPresenterModal = ({
             <span>
               Slide {index + 1} / {slides.length}
             </span>
-            {slide.pageRef ? <span>Textbook {slide.pageRef}</span> : null}
           </div>
 
           {slide.kind === "quiz_launch" ? (
