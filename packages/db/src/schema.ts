@@ -4,6 +4,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -245,9 +246,306 @@ export const appSettings = pgTable("app_settings", {
  */
 export const EXTRACTION_MODEL_SETTING = "extraction_model";
 
+/* --- Light accounts & Lesson Studio --- */
+
+export const userRoleEnum = pgEnum("user_role", ["teacher", "student"]);
+
+export const lessonStageEnum = pgEnum("lesson_stage", [
+  "generating_plan",
+  "review_plan",
+  "generating_materials",
+  "studio",
+  "failed",
+]);
+
+export const lessonJobKindEnum = pgEnum("lesson_job_kind", [
+  "plan",
+  "materials",
+]);
+
+export const lessonJobStatusEnum = pgEnum("lesson_job_status", [
+  "queued",
+  "running",
+  "done",
+  "failed",
+]);
+
+export const lessonAssetKindEnum = pgEnum("lesson_asset_kind", [
+  "image",
+  "pdf",
+  "note",
+]);
+
+export const learningEventTypeEnum = pgEnum("learning_event_type", [
+  "quiz_completed",
+]);
+
+export interface LessonDeliverablesJson {
+  slides: boolean;
+  kahootTest: boolean;
+  homework: boolean;
+}
+
+export interface LessonPlanBlockJson {
+  id: string;
+  lessonNumber: number;
+  title: string;
+  minutes: number;
+  pageRef: string | null;
+  explanation: string;
+  teacherNote: string;
+}
+
+export interface LessonSlideJson {
+  id: string;
+  kind: "concept" | "worked_example" | "uploaded_media" | "quiz_launch";
+  lessonNumber: number;
+  title: string;
+  bullets: string[];
+  formulaOrCallout: string | null;
+  pageRef: string | null;
+  imageUrl: string | null;
+  imageCaption: string | null;
+  speakerNotes: string;
+}
+
+export interface HomeworkItemJson {
+  id: string;
+  title: string;
+  prompt: string;
+  expectedMinutes: number;
+  answerGuide: string;
+}
+
+export interface LessonGroundingJson {
+  bookTitle: string;
+  language: string;
+  grade: number | null;
+  unitTitle: string;
+  pageRangeLabel: string;
+  summary: string;
+  keyTerms: string[];
+  markdownExcerpt: string;
+  figures: Array<{
+    caption: string;
+    description: string;
+    pageLabel: string;
+  }>;
+  audience: string;
+  amountOfLessons: number;
+  minutesPerLesson: number;
+  creativeAngle: string;
+  noteAttachments: string[];
+}
+
+export interface QuizChoiceJson {
+  id: string;
+  shape: "triangle" | "diamond" | "circle" | "square";
+  text: string;
+}
+
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    role: userRoleEnum("role").notNull(),
+    username: text("username").notNull(),
+    displayName: text("display_name").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    usernameUnique: uniqueIndex("users_username_idx").on(table.username),
+  }),
+);
+
+export const sessions = pgTable("sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const lessons = pgTable(
+  "lessons",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    shareCode: text("share_code").notNull(),
+    teacherId: uuid("teacher_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    bookId: uuid("book_id").references(() => books.id, {
+      onDelete: "set null",
+    }),
+    unitKey: text("unit_key").notNull(),
+    unitTitle: text("unit_title").notNull(),
+    pageRangeLabel: text("page_range_label").notNull(),
+    bookTitle: text("book_title").notNull(),
+    language: text("language").notNull(),
+    audience: text("audience").notNull(),
+    amountOfLessons: integer("amount_of_lessons").notNull().default(1),
+    minutesPerLesson: integer("minutes_per_lesson").notNull().default(45),
+    creativeAngle: text("creative_angle").notNull().default(""),
+    deliverables: jsonb("deliverables")
+      .$type<LessonDeliverablesJson>()
+      .notNull(),
+    stage: lessonStageEnum("stage").notNull().default("generating_plan"),
+    title: text("title").notNull(),
+    planBlocks: jsonb("plan_blocks")
+      .$type<LessonPlanBlockJson[]>()
+      .notNull()
+      .default([]),
+    slides: jsonb("slides").$type<LessonSlideJson[]>().notNull().default([]),
+    homework: jsonb("homework")
+      .$type<HomeworkItemJson[]>()
+      .notNull()
+      .default([]),
+    grounding: jsonb("grounding").$type<LessonGroundingJson | null>(),
+    conceptId: text("concept_id"),
+    isSample: boolean("is_sample").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    shareCodeUnique: uniqueIndex("lessons_share_code_idx").on(table.shareCode),
+  }),
+);
+
+export const lessonAssets = pgTable("lesson_assets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  lessonId: uuid("lesson_id")
+    .notNull()
+    .references(() => lessons.id, { onDelete: "cascade" }),
+  kind: lessonAssetKindEnum("kind").notNull(),
+  name: text("name").notNull(),
+  url: text("url"),
+  notesText: text("notes_text"),
+  includeAsSlide: boolean("include_as_slide").notNull().default(false),
+  useInAi: boolean("use_in_ai").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const lessonJobs = pgTable("lesson_jobs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  lessonId: uuid("lesson_id")
+    .notNull()
+    .references(() => lessons.id, { onDelete: "cascade" }),
+  kind: lessonJobKindEnum("kind").notNull(),
+  status: lessonJobStatusEnum("status").notNull().default("queued"),
+  error: text("error"),
+  model: text("model"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+});
+
+export const quizQuestions = pgTable("quiz_questions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  lessonId: uuid("lesson_id")
+    .notNull()
+    .references(() => lessons.id, { onDelete: "cascade" }),
+  orderIndex: integer("order_index").notNull(),
+  prompt: text("prompt").notNull(),
+  scenarioNote: text("scenario_note"),
+  choices: jsonb("choices").$type<QuizChoiceJson[]>().notNull(),
+  correctChoiceId: text("correct_choice_id").notNull(),
+  explanation: text("explanation").notNull().default(""),
+  timeLimitSec: integer("time_limit_sec").notNull().default(20),
+  points: integer("points").notNull().default(1000),
+  conceptId: text("concept_id"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const quizAttempts = pgTable("quiz_attempts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  lessonId: uuid("lesson_id")
+    .notNull()
+    .references(() => lessons.id, { onDelete: "cascade" }),
+  studentId: uuid("student_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  displayName: text("display_name").notNull(),
+  scorePoints: integer("score_points").notNull(),
+  correctCount: integer("correct_count").notNull(),
+  totalQuestions: integer("total_questions").notNull(),
+  masteryRatio: real("mastery_ratio").notNull(),
+  bestStreak: integer("best_streak").notNull().default(0),
+  durationSec: integer("duration_sec").notNull(),
+  gradeFiveScale: integer("grade_five_scale").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const quizAttemptItems = pgTable("quiz_attempt_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  attemptId: uuid("attempt_id")
+    .notNull()
+    .references(() => quizAttempts.id, { onDelete: "cascade" }),
+  questionId: uuid("question_id")
+    .notNull()
+    .references(() => quizQuestions.id, { onDelete: "cascade" }),
+  choiceId: text("choice_id"),
+  isCorrect: boolean("is_correct").notNull(),
+  timeSpentSec: integer("time_spent_sec").notNull().default(0),
+});
+
+export const learningEvents = pgTable("learning_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  studentId: uuid("student_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  lessonId: uuid("lesson_id").references(() => lessons.id, {
+    onDelete: "set null",
+  }),
+  bookId: uuid("book_id").references(() => books.id, {
+    onDelete: "set null",
+  }),
+  conceptId: text("concept_id"),
+  eventType: learningEventTypeEnum("event_type").notNull(),
+  masteryRatio: real("mastery_ratio"),
+  gradeFiveScale: integer("grade_five_scale"),
+  timeSpentSec: integer("time_spent_sec"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export type Country = typeof countries.$inferSelect;
 export type Book = typeof books.$inferSelect;
 export type BookPage = typeof bookPages.$inferSelect;
 export type IngestionJob = typeof ingestionJobs.$inferSelect;
 export type Unit = typeof units.$inferSelect;
 export type AppSetting = typeof appSettings.$inferSelect;
+export type User = typeof users.$inferSelect;
+export type Session = typeof sessions.$inferSelect;
+export type Lesson = typeof lessons.$inferSelect;
+export type LessonAsset = typeof lessonAssets.$inferSelect;
+export type LessonJob = typeof lessonJobs.$inferSelect;
+export type QuizQuestion = typeof quizQuestions.$inferSelect;
+export type QuizAttempt = typeof quizAttempts.$inferSelect;
+export type QuizAttemptItem = typeof quizAttemptItems.$inferSelect;
+export type LearningEvent = typeof learningEvents.$inferSelect;

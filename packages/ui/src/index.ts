@@ -9,17 +9,29 @@ export { Card } from "./card";
 export type { CardProps } from "./card";
 export { fieldClass } from "./field";
 export {
+  CheckIcon,
   ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   ChevronUpIcon,
+  ClockIcon,
   CloseIcon,
+  CopyIcon,
+  DocumentIcon,
+  ExternalLinkIcon,
+  FullscreenIcon,
   MenuIcon,
   MoonIcon,
   PencilIcon,
+  PlayIcon,
+  PlusIcon,
   RefreshIcon,
+  SlidesIcon,
+  SparklesIcon,
   SunIcon,
   TrashIcon,
+  TrophyIcon,
+  UploadIcon,
 } from "./icons";
 export type { IconProps } from "./icons";
 export { Notice } from "./notice";

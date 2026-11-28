@@ -213,6 +213,9 @@ export const LibraryRail = (): ReactElement => {
       >
         Library
       </Link>
+      <Link href="/lessons" className={rowClass(false)}>
+        Lesson Studio
+      </Link>
 
       {bookId && data && outline ? (
         <div className="mt-4 border-t border-[var(--rail-hover)] pt-4">

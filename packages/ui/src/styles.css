@@ -40,11 +40,27 @@
   --status-reviewed-on: #f5f1e8;
   --status-failed: #b03e26;
 
+  /* 5-point grading scale (2–5) and Kahoot-style choice fills, all >= 4.5:1. */
+  --grade-five: #15803d;
+  --grade-four: #0f766e;
+  --grade-three: #b45309;
+  --grade-two: #b91c1c;
+
+  --choice-a: #b83d24;
+  --choice-a-hover: #9e321c;
+  --choice-b: #1d3557;
+  --choice-b-hover: #152843;
+  --choice-c: #0f766e;
+  --choice-c-hover: #115e59;
+  --choice-d: #92400e;
+  --choice-d-hover: #78350f;
+  --on-choice: #fffdf9;
+
   --rounded-xs: 4px;
   --rounded-sm: 6px;
   --rounded-md: 8px;
-  --font-sans: "Golos Text", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-sans: var(--font-golos), "Golos Text", system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
 }
 
 [data-theme="dark"] {
@@ -81,6 +97,14 @@
   --status-reviewed-fill: #2a4a7f;
   --status-reviewed-on: #f5f1e8;
   --status-failed: #e05d44;
+
+  --grade-five: #4ade80;
+  --grade-four: #2dd4bf;
+  --grade-three: #fbbf24;
+  --grade-two: #f87171;
+
+  --choice-b: #2b5082;
+  --choice-b-hover: #356099;
 }
 
 * {
@@ -90,6 +114,7 @@
 /* Keep the scrollbar gutter so the page does not shift when the drawer locks scrolling. */
 html {
   scrollbar-gutter: stable;
+  scrollbar-color: var(--border-control) var(--bg-canvas);
 }
 
 @keyframes oku-drawer-in {
@@ -98,6 +123,23 @@ html {
   }
   to {
     transform: translateX(0);
+  }
+}
+
+@keyframes oku-plate-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .oku-stage-enter {
+    animation: oku-plate-in 160ms ease-out;
   }
 }
 
@@ -110,6 +152,10 @@ body {
   font-family: var(--font-sans);
   accent-color: var(--accent-primary);
   caret-color: var(--accent-primary);
+}
+
+:root a {
+  text-underline-offset: 3px;
 }
 
 /*

@@ -31,10 +31,13 @@ export default function RootLayout({
   children,
 }: RootLayoutProps): ReactElement {
   return (
-    <html lang="en" data-theme="light" suppressHydrationWarning>
-      <body
-        className={`${golos.variable} ${jetbrains.variable} font-sans antialiased`}
-      >
+    <html
+      lang="en"
+      data-theme="light"
+      className={`${golos.variable} ${jetbrains.variable}`}
+      suppressHydrationWarning
+    >
+      <body className="font-sans antialiased">
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
         {children}
       </body>

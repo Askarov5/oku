@@ -106,26 +106,34 @@ const UnitRoute = (): ReactElement => {
         </div>
       ) : (
         <div>
-          <header className="mb-6">
-            <Link href={bookHref} className={BACK}>
-              <ChevronLeftIcon />
-              {data.book.title}
+          <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+            <div className="min-w-0">
+              <Link href={bookHref} className={BACK}>
+                <ChevronLeftIcon />
+                {data.book.title}
+              </Link>
+              <UnitTitle level={unit.header.level} title={unit.header.title} />
+              <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-xs tabular-nums text-[var(--text-secondary)]">
+                <span>
+                  Unit {index + 1} of {outline.units.length}
+                </span>
+                <span>
+                  {unitRangeLabel(outline, unit.header)}
+                </span>
+                <StatusPill
+                  status={data.book.status}
+                  label={
+                    data.book.status === "published" ? "published" : "not published"
+                  }
+                />
+              </p>
+            </div>
+            <Link
+              href={`/lessons?bookId=${bookId}&unit=${index + 1}`}
+              className={buttonClasses({ variant: "secondary", size: "sm" })}
+            >
+              Create lesson
             </Link>
-            <UnitTitle level={unit.header.level} title={unit.header.title} />
-            <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-xs tabular-nums text-[var(--text-secondary)]">
-              <span>
-                Unit {index + 1} of {outline.units.length}
-              </span>
-              <span>
-                {unitRangeLabel(outline, unit.header)}
-              </span>
-              <StatusPill
-                status={data.book.status}
-                label={
-                  data.book.status === "published" ? "published" : "not published"
-                }
-              />
-            </p>
           </header>
 
           <Card padded={false} className="px-4 py-2 sm:px-10 sm:py-6">

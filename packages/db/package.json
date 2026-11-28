@@ -17,6 +17,7 @@
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
     "seed": "tsx src/seed.ts",
+    "seed:sample-lesson": "tsx src/seed-sample-lesson.ts",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

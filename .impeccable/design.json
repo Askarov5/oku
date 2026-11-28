@@ -1,0 +1,367 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-26T23:19:00Z",
+  "title": "Design System: oku",
+  "extensions": {
+    "colorMeta": {
+      "atlas-parchment": {
+        "role": "neutral",
+        "displayName": "Atlas Parchment",
+        "canonical": "#F5F1E8",
+        "tonalRamp": ["#29251D", "#474134", "#665E4C", "#877D67", "#A89E86", "#C7BEB8", "#E3DDD0", "#F5F1E8"]
+      },
+      "atlas-paper": {
+        "role": "neutral",
+        "displayName": "Atlas Paper",
+        "canonical": "#FFFDF9",
+        "tonalRamp": ["#2B2925", "#4A4740", "#6B675E", "#8E897E", "#B2ADA0", "#D4CFC3", "#EFECE3", "#FFFDF9"]
+      },
+      "atlas-hover": {
+        "role": "neutral",
+        "displayName": "Atlas Parchment Hover",
+        "canonical": "#ECE6D8",
+        "tonalRamp": ["#28241B", "#453F30", "#645B47", "#857A60", "#A69A7D", "#C6BCA2", "#DDD6C4", "#ECE6D8"]
+      },
+      "atlas-border": {
+        "role": "neutral",
+        "displayName": "Atlas Hairline Border",
+        "canonical": "#D6CFC2",
+        "tonalRamp": ["#26231D", "#423D33", "#60594B", "#807765", "#A09682", "#BCB3A1", "#D6CFC2", "#EFECE5"]
+      },
+      "control-border": {
+        "role": "neutral",
+        "displayName": "Atlas Control Border",
+        "canonical": "#8A8375",
+        "tonalRamp": ["#24211D", "#3D3932", "#575248", "#716B5E", "#8A8375", "#A9A295", "#C8C2B7", "#E8E4DD"]
+      },
+      "atlas-ink": {
+        "role": "neutral",
+        "displayName": "Atlas Charcoal Ink",
+        "canonical": "#1F2937",
+        "tonalRamp": ["#111827", "#1F2937", "#374151", "#4B5563", "#6B7280", "#9CA3AF", "#D1D5DB", "#F3F4F6"]
+      },
+      "atlas-ink-muted": {
+        "role": "neutral",
+        "displayName": "Muted Stone Ink",
+        "canonical": "#57534E",
+        "tonalRamp": ["#1C1917", "#292524", "#44403C", "#57534E", "#78716C", "#A8A29E", "#D6D3D1", "#F5F5F4"]
+      },
+      "prussian-cobalt": {
+        "role": "secondary",
+        "displayName": "Prussian Cobalt",
+        "canonical": "#1D3557",
+        "tonalRamp": ["#0F1D31", "#152843", "#1D3557", "#2B5082", "#3E6BA5", "#688EC2", "#A4BFE2", "#E3ECF7"]
+      },
+      "prussian-cobalt-deep": {
+        "role": "secondary",
+        "displayName": "Deep Prussian Cobalt",
+        "canonical": "#152843",
+        "tonalRamp": ["#0B1626", "#152843", "#1F3B61", "#2C5285", "#436DA3", "#6E92BF", "#A8C0DE", "#E5EEF8"]
+      },
+      "vermilion-accent": {
+        "role": "primary",
+        "displayName": "Vermilion Border Rule",
+        "canonical": "#C84B31",
+        "tonalRamp": ["#3B140C", "#632215", "#8F321F", "#B03E26", "#C84B31", "#E06D55", "#F0A494", "#FCE5DF"]
+      },
+      "vermilion-hover": {
+        "role": "primary",
+        "displayName": "Deep Vermilion Ink",
+        "canonical": "#B03E26",
+        "tonalRamp": ["#36120A", "#5C1F12", "#852D1B", "#B03E26", "#CE5940", "#E3816B", "#F2B2A4", "#FCE8E3"]
+      },
+      "night-slate": {
+        "role": "neutral",
+        "displayName": "Night Slate Canvas",
+        "canonical": "#12161C",
+        "tonalRamp": ["#12161C", "#1A2029", "#252E3B", "#364254", "#4E5E75", "#73849E", "#A6B3C7", "#E1E6EE"]
+      },
+      "night-plate": {
+        "role": "neutral",
+        "displayName": "Night Atlas Plate",
+        "canonical": "#1A2029",
+        "tonalRamp": ["#12161C", "#1A2029", "#262F3D", "#384559", "#51627A", "#7788A1", "#AAB6C9", "#E3E8F0"]
+      },
+      "night-hover": {
+        "role": "neutral",
+        "displayName": "Night Plate Hover",
+        "canonical": "#232B37",
+        "tonalRamp": ["#131820", "#232B37", "#323D4E", "#46556B", "#60728C", "#8596AE", "#B4C0D1", "#E6EBF2"]
+      },
+      "night-border": {
+        "role": "neutral",
+        "displayName": "Night Hairline Border",
+        "canonical": "#2B3442",
+        "tonalRamp": ["#151A22", "#2B3442", "#3C485B", "#52627A", "#6D7F99", "#91A0B7", "#BDC7D7", "#EAEFF5"]
+      },
+      "night-control-border": {
+        "role": "neutral",
+        "displayName": "Night Control Border",
+        "canonical": "#6B7688",
+        "tonalRamp": ["#1B1F26", "#2F3540", "#454D5C", "#586273", "#6B7688", "#8F99A8", "#B8BFC9", "#E6E9ED"]
+      },
+      "night-ink": {
+        "role": "neutral",
+        "displayName": "Night Parchment Ink",
+        "canonical": "#F5F1E8",
+        "tonalRamp": ["#29251D", "#474134", "#665E4C", "#877D67", "#A89E86", "#C7BEB8", "#E3DDD0", "#F5F1E8"]
+      },
+      "night-ink-muted": {
+        "role": "neutral",
+        "displayName": "Night Muted Slate Ink",
+        "canonical": "#9CA3AF",
+        "tonalRamp": ["#181B20", "#2C313A", "#434A56", "#5C6472", "#798291", "#9CA3AF", "#C4C9D1", "#ECEEF1"]
+      },
+      "night-cobalt": {
+        "role": "secondary",
+        "displayName": "Night Cobalt Fill",
+        "canonical": "#2A4A7F",
+        "tonalRamp": ["#112038", "#1C345A", "#2A4A7F", "#3962A3", "#527EC0", "#7BA0D6", "#AFC7EA", "#E6EFFA"]
+      },
+      "night-vermilion": {
+        "role": "primary",
+        "displayName": "Night Vermilion Accent",
+        "canonical": "#E05D44",
+        "tonalRamp": ["#3D150D", "#692518", "#993623", "#C44831", "#E05D44", "#EB836E", "#F4B2A5", "#FCE7E3"]
+      },
+      "grade-five": {
+        "role": "tertiary",
+        "displayName": "Grade 5 Forest Green (Light)",
+        "canonical": "#15803D",
+        "tonalRamp": ["#093319", "#0F572A", "#15803D", "#1CA14E", "#34C269", "#69D992", "#A7ECC0", "#E3F9EB"]
+      },
+      "grade-four": {
+        "role": "tertiary",
+        "displayName": "Grade 4 & Choice C Teal",
+        "canonical": "#0F766E",
+        "tonalRamp": ["#072E2B", "#0B524C", "#0F766E", "#15998E", "#2DBBB0", "#65D4CB", "#A6EAE4", "#E3F9F7"]
+      },
+      "grade-three": {
+        "role": "tertiary",
+        "displayName": "Grade 3 Ochre Amber (Light)",
+        "canonical": "#B45309",
+        "tonalRamp": ["#381902", "#632D05", "#8C4007", "#B45309", "#D97706", "#F59E0B", "#FCD34D", "#FEF3C7"]
+      },
+      "grade-two": {
+        "role": "tertiary",
+        "displayName": "Grade 2 Crimson (Light)",
+        "canonical": "#B91C1C",
+        "tonalRamp": ["#3B0909", "#661010", "#911616", "#B91C1C", "#DC2626", "#EF4444", "#FCA5A5", "#FEE2E2"]
+      },
+      "night-grade-five": {
+        "role": "tertiary",
+        "displayName": "Grade 5 Mint Green (Dark)",
+        "canonical": "#4ADE80",
+        "tonalRamp": ["#093319", "#125C2E", "#188442", "#22AE57", "#4ADE80", "#7BE8A3", "#B0F2C8", "#E6FCEE"]
+      },
+      "night-grade-four": {
+        "role": "tertiary",
+        "displayName": "Grade 4 Seafoam Teal (Dark)",
+        "canonical": "#2DD4BF",
+        "tonalRamp": ["#072E2B", "#0D5952", "#138277", "#1BA99B", "#2DD4BF", "#66E2D2", "#A4EFE5", "#E4FAF7"]
+      },
+      "night-grade-three": {
+        "role": "tertiary",
+        "displayName": "Grade 3 Warm Gold (Dark)",
+        "canonical": "#FBBF24",
+        "tonalRamp": ["#3B2603", "#6B4606", "#9C6709", "#CE890D", "#F59E0B", "#FBBF24", "#FDE08B", "#FEF7DC"]
+      },
+      "night-grade-two": {
+        "role": "tertiary",
+        "displayName": "Grade 2 Coral Red (Dark)",
+        "canonical": "#F87171",
+        "tonalRamp": ["#3B0B0B", "#6B1414", "#9C1D1D", "#CC2929", "#EF4444", "#F87171", "#FCAFAF", "#FEE7E7"]
+      },
+      "choice-a": {
+        "role": "primary",
+        "displayName": "Choice A Terracotta Triangle",
+        "canonical": "#B83D24",
+        "tonalRamp": ["#38120B", "#611F13", "#8C2E1B", "#B83D24", "#D4583F", "#E6826E", "#F3B5A8", "#FCE8E4"]
+      },
+      "choice-a-hover": {
+        "role": "primary",
+        "displayName": "Choice A Hover Terracotta",
+        "canonical": "#9E321C",
+        "tonalRamp": ["#331009", "#591C10", "#7D2716", "#9E321C", "#C24B32", "#DE7660", "#F0AE9F", "#FCE7E2"]
+      },
+      "choice-b-dark": {
+        "role": "secondary",
+        "displayName": "Choice B Night Cobalt Diamond",
+        "canonical": "#2B5082",
+        "tonalRamp": ["#102036", "#1C375C", "#2B5082", "#356099", "#4E7BB5", "#799ECE", "#AEC5E4", "#E6EEF8"]
+      },
+      "choice-b-dark-hover": {
+        "role": "secondary",
+        "displayName": "Choice B Night Hover Cobalt",
+        "canonical": "#356099",
+        "tonalRamp": ["#11223A", "#1E3B63", "#2B5082", "#356099", "#527EB8", "#7EA1CF", "#B2C8E5", "#E7EFF9"]
+      },
+      "choice-c-hover": {
+        "role": "tertiary",
+        "displayName": "Choice C Hover Deep Teal",
+        "canonical": "#115E59",
+        "tonalRamp": ["#062926", "#0B4541", "#115E59", "#148079", "#28A89F", "#5EC9C1", "#A1E3DE", "#E3F8F6"]
+      },
+      "choice-d": {
+        "role": "tertiary",
+        "displayName": "Choice D Ochre Square",
+        "canonical": "#92400E",
+        "tonalRamp": ["#331605", "#572608", "#78350F", "#92400E", "#B85518", "#DA7B3E", "#ECB088", "#FAE7DA"]
+      },
+      "choice-d-hover": {
+        "role": "tertiary",
+        "displayName": "Choice D Hover Deep Umber",
+        "canonical": "#78350F",
+        "tonalRamp": ["#2B1304", "#4F2208", "#78350F", "#994514", "#BD5E26", "#DC844E", "#EEB795", "#FAE9DF"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display (Golos Text 700)",
+        "purpose": "Classroom projection slide titles, quiz lobby headings, and top-level studio titles."
+      },
+      "headline": {
+        "displayName": "Headline (Golos Text 600)",
+        "purpose": "Textbook unit titles, active quiz question prompts, and workspace section headings."
+      },
+      "title": {
+        "displayName": "Title (Golos Text 600)",
+        "purpose": "Card headings, plan block titles, and parameter panel headers."
+      },
+      "body": {
+        "displayName": "Body (Golos Text 400)",
+        "purpose": "65ch Kyrgyz and Russian textbook prose, lesson explanations, and speaker cues."
+      },
+      "label": {
+        "displayName": "Tabular Metadata (JetBrains Mono 500)",
+        "purpose": "5-point grades, timers, points, slide counters, and textbook page markers (42-б. / стр. 42)."
+      }
+    },
+    "shadows": [
+      {
+        "name": "flat-none",
+        "value": "none",
+        "purpose": "Zero drop shadows across all cards, drawers, and projection plates; hierarchy uses surface tone shifts, 1px hairline borders, and 4px vermilion rules."
+      }
+    ],
+    "motion": [
+      {
+        "name": "oku-plate-in",
+        "value": "160ms ease-out (opacity 0 -> 1, translateY 4px -> 0)",
+        "purpose": "Stage transitions in /lessons and slide advances in TeachPresenterModal (.oku-stage-enter), gated behind prefers-reduced-motion: no-preference."
+      },
+      {
+        "name": "oku-drawer-in",
+        "value": "180ms cubic-bezier(0.16, 1, 0.3, 1) (translateX -100% -> 0)",
+        "purpose": "Mobile/tablet cobalt navigation dialog slide-in, disabled under prefers-reduced-motion."
+      },
+      {
+        "name": "quiz-timer-linear",
+        "value": "700ms linear",
+        "purpose": "Countdown progress bar width interpolation on /play/[shareCode]."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Vermilion primary action button for generating lesson plans, starting teaching, and launching student quizzes (44px min height).",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z\"/></svg>Start teaching</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 18px; border-radius: var(--rounded-xs, 4px); border: 1px solid transparent; background: var(--accent-primary, #c84b31); color: var(--on-accent, #fffdf9); font-family: var(--font-sans, 'Golos Text', system-ui, sans-serif); font-size: 14px; font-weight: 600; cursor: pointer; transition: background-color 150ms ease; } .ds-btn-primary:hover, .ds-btn-primary:active { background: var(--accent-primary-hover, #b03e26); } .ds-btn-primary:focus-visible { outline: 2px solid var(--focus-ring, #c84b31); outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary & Ghost Buttons",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Prussian-cobalt secondary fill and control-bordered ghost action buttons.",
+      "html": "<div class=\"ds-btn-row\"><button class=\"ds-btn-secondary\" type=\"button\">Present from here</button><button class=\"ds-btn-ghost\" type=\"button\">Student quiz</button></div>",
+      "css": ".ds-btn-row { display: flex; flex-wrap: wrap; gap: 10px; } .ds-btn-secondary, .ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 18px; border-radius: var(--rounded-xs, 4px); font-family: var(--font-sans, 'Golos Text', system-ui, sans-serif); font-size: 14px; font-weight: 600; cursor: pointer; transition: background-color 150ms ease; } .ds-btn-secondary { border: 1px solid transparent; background: var(--accent-secondary, #1d3557); color: var(--on-accent-secondary, #f5f1e8); } .ds-btn-secondary:hover, .ds-btn-secondary:active { background: var(--accent-secondary-hover, #152843); } .ds-btn-ghost { border: 1px solid var(--border-control, #8a8375); background: transparent; color: var(--text-primary, #1f2937); } .ds-btn-ghost:hover, .ds-btn-ghost:active { background: var(--bg-hover, #ece6d8); } .ds-btn-secondary:focus-visible, .ds-btn-ghost:focus-visible { outline: 2px solid var(--focus-ring, #c84b31); outline-offset: 2px; }"
+    },
+    {
+      "name": "Atlas Text Input",
+      "kind": "input",
+      "refersTo": "card-light",
+      "description": "Parchment-backed form control with 3:1 control border and vermilion focus ring.",
+      "html": "<label class=\"ds-field-wrap\"><span class=\"ds-field-label\">Audience</span><input class=\"ds-field-input\" type=\"text\" value=\"Grade 9 · 14–15 years\" /></label>",
+      "css": ".ds-field-wrap { display: block; max-width: 320px; font-family: var(--font-sans, 'Golos Text', system-ui, sans-serif); } .ds-field-label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 600; color: var(--text-primary, #1f2937); } .ds-field-input { width: 100%; min-height: 40px; padding: 8px 12px; border-radius: var(--rounded-xs, 4px); border: 1px solid var(--border-control, #8a8375); background: var(--bg-canvas, #f5f1e8); color: var(--text-primary, #1f2937); font-family: inherit; font-size: 14px; } .ds-field-input:focus-visible { outline: 2px solid var(--focus-ring, #c84b31); outline-offset: 2px; }"
+    },
+    {
+      "name": "Lesson Studio Cobalt Rail",
+      "kind": "nav",
+      "refersTo": "button-secondary",
+      "description": "Fixed 260px Prussian-cobalt rail closed by a 4px vermilion border rule with numbered workflow jumps.",
+      "html": "<aside class=\"ds-rail\"><div class=\"ds-rail-brand\"><strong>oku</strong><span>Lesson Studio</span></div><div class=\"ds-rail-group\"><p class=\"ds-rail-heading\">Workflow stages</p><button class=\"ds-rail-row\" type=\"button\"><span class=\"ds-mono\">1.</span><span>Setup &amp; unit</span></button><button class=\"ds-rail-row ds-rail-row-active\" type=\"button\"><span class=\"ds-mono\">2.</span><span>Plan review</span></button><button class=\"ds-rail-row\" type=\"button\"><span class=\"ds-mono\">3.</span><span>Teaching studio</span></button></div></aside>",
+      "css": ".ds-rail { width: 260px; padding: 20px 12px; background: var(--bg-rail, #1d3557); color: var(--text-on-rail, #f5f1e8); border-right: 4px solid var(--accent-primary, #c84b31); font-family: var(--font-sans, 'Golos Text', system-ui, sans-serif); } .ds-rail-brand { padding: 0 8px 16px; border-bottom: 1px solid var(--rail-hover, #2c4a75); } .ds-rail-brand strong { display: block; font-size: 22px; letter-spacing: -0.02em; } .ds-rail-brand span { font-size: 13px; color: var(--text-on-rail-muted, #b9c6dd); } .ds-rail-group { padding-top: 14px; display: flex; flex-direction: column; gap: 4px; } .ds-rail-heading { margin: 0 0 6px; padding: 0 12px; font-size: 12px; font-weight: 500; color: var(--text-on-rail-muted, #b9c6dd); } .ds-rail-row { display: flex; align-items: center; gap: 10px; min-height: 38px; width: 100%; padding: 8px 12px; border: 0; border-radius: var(--rounded-xs, 4px); background: transparent; color: var(--text-on-rail, #f5f1e8); font-family: inherit; font-size: 14px; text-align: left; cursor: pointer; } .ds-rail-row:hover { background: var(--rail-hover, #2c4a75); } .ds-rail-row-active, .ds-rail-row-active:hover { background: var(--accent-primary, #c84b31); color: var(--on-accent, #fffdf9); font-weight: 600; } .ds-rail-row:focus-visible { outline: 2px solid var(--text-on-rail, #f5f1e8); outline-offset: 2px; } .ds-mono { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 12px; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "5-Point Grade Pills (2–5)",
+      "kind": "chip",
+      "refersTo": "card-light",
+      "description": "Outlined JetBrains Mono badges mapped strictly to the post-Soviet 5-point grading scale.",
+      "html": "<div class=\"ds-grades\"><span class=\"ds-grade ds-g5\">Grade 5 · Excellent</span><span class=\"ds-grade ds-g4\">Grade 4 · Good</span><span class=\"ds-grade ds-g3\">Grade 3 · Satisfactory</span><span class=\"ds-grade ds-g2\">Grade 2 · Needs review</span></div>",
+      "css": ".ds-grades { display: flex; flex-wrap: wrap; gap: 8px; } .ds-grade { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: var(--rounded-xs, 4px); border: 1px solid currentColor; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; } .ds-g5 { color: var(--grade-five, #15803d); } .ds-g4 { color: var(--grade-four, #0f766e); } .ds-g3 { color: var(--grade-three, #b45309); } .ds-g2 { color: var(--grade-two, #b91c1c); }"
+    },
+    {
+      "name": "16:9 Classroom Projection Plate",
+      "kind": "card",
+      "refersTo": "projection-plate",
+      "description": "Sharp 0px-radius 16:9 slide stage anchored by a 4px vermilion top border, tabular textbook page marker, and monospace formula callout.",
+      "html": "<article class=\"ds-plate\"><header class=\"ds-plate-meta\"><span>Slide 2 / 6</span><span>Textbook стр. 42</span></header><div class=\"ds-plate-body\"><h3>Kinetic Energy on the Pitch</h3><ol class=\"ds-plate-list\"><li><span class=\"ds-plate-num\">1.</span><span>Doubling shot speed quadruples kinetic energy while doubling ball mass only doubles it.</span></li><li><span class=\"ds-plate-num\">2.</span><span>Compare a slow training pass with a driven free kick at 28 m/s.</span></li></ol></div><div class=\"ds-plate-formula\">Ek = ½ · m · v² (Joules, J)</div></article>",
+      "css": ".ds-plate { display: flex; flex-direction: column; justify-content: space-between; aspect-ratio: 16 / 9; max-width: 560px; padding: 24px 28px; border-radius: 0; border: 1px solid var(--border-hairline, #d6cfc2); border-top: 4px solid var(--accent-primary, #c84b31); background: var(--bg-surface, #fffdf9); color: var(--text-primary, #1f2937); font-family: var(--font-sans, 'Golos Text', system-ui, sans-serif); } .ds-plate-meta { display: flex; justify-content: space-between; padding-bottom: 10px; border-bottom: 1px solid var(--border-hairline, #d6cfc2); font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text-secondary, #57534e); } .ds-plate-body h3 { margin: 14px 0 10px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; } .ds-plate-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 15px; line-height: 1.55; } .ds-plate-list li { display: flex; align-items: baseline; gap: 10px; } .ds-plate-num { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 13px; font-weight: 600; color: var(--accent-ink, #b03e26); } .ds-plate-formula { margin-top: 14px; padding: 10px 14px; border-radius: var(--rounded-xs, 4px); border: 1px solid var(--border-hairline, #d6cfc2); background: var(--bg-canvas, #f5f1e8); font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 13px; font-weight: 600; }"
+    },
+    {
+      "name": "Kahoot Geometric Choice Grid",
+      "kind": "custom",
+      "refersTo": "choice-tile-a",
+      "description": "2x2 mobile-first student answer grid pairing --choice-a..d pigments with inline geometric SVG marks.",
+      "html": "<div class=\"ds-choices\"><button class=\"ds-choice ds-ca\" type=\"button\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 16 16\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M8 2.2 14.2 13.5H1.8L8 2.2Z\"/></svg><span>It quadruples (4×)</span></button><button class=\"ds-choice ds-cb\" type=\"button\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 16 16\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M8 1.5 14.5 8 8 14.5 1.5 8 8 1.5Z\"/></svg><span>It doubles (2×)</span></button><button class=\"ds-choice ds-cc\" type=\"button\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 16 16\" fill=\"currentColor\" aria-hidden=\"true\"><circle cx=\"8\" cy=\"8\" r=\"5.8\"/></svg><span>It stays constant</span></button><button class=\"ds-choice ds-cd\" type=\"button\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 16 16\" fill=\"currentColor\" aria-hidden=\"true\"><rect x=\"2.5\" y=\"2.5\" width=\"11\" height=\"11\" rx=\"1\"/></svg><span>It halves (½×)</span></button></div>",
+      "css": ".ds-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-width: 560px; } .ds-choice { display: flex; align-items: center; gap: 12px; min-height: 76px; padding: 14px 16px; border-radius: var(--rounded-xs, 4px); border: 2px solid var(--border-hairline, #d6cfc2); color: var(--on-choice, #fffdf9); font-family: var(--font-sans, 'Golos Text', system-ui, sans-serif); font-size: 15px; font-weight: 600; text-align: left; cursor: pointer; transition: background-color 150ms ease; } .ds-ca { background: var(--choice-a, #b83d24); } .ds-ca:hover { background: var(--choice-a-hover, #9e321c); } .ds-cb { background: var(--choice-b, #1d3557); } .ds-cb:hover { background: var(--choice-b-hover, #152843); } .ds-cc { background: var(--choice-c, #0f766e); } .ds-cc:hover { background: var(--choice-c-hover, #115e59); } .ds-cd { background: var(--choice-d, #92400e); } .ds-cd:hover { background: var(--choice-d-hover, #78350f); } .ds-choice:focus-visible { outline: 2px solid var(--focus-ring, #c84b31); outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Central Asian Cartographic Atlas",
+    "overview": "oku draws its visual language from post-Soviet Kyrgyz and Central Asian school geographical atlases: warm uncoated paper stock in daylight, deep night-slate atlas plates after dark, a committed Prussian-cobalt navigation rail, and crisp vermilion border rules.",
+    "keyCharacteristics": [
+      "Light Theme (Daylight Atlas): Built for daytime classroom and home study on warm uncoated parchment (#F5F1E8) with bright paper reading plates (#FFFDF9) that reduce harsh white-screen glare.",
+      "Dark Theme (Night Atlas Plate): Built for evening self-study and map exploration on deep charcoal-slate (#12161C) with elevated plates (#1A2029), preserving WCAG AA contrast without losing the cobalt-and-vermilion atlas identity.",
+      "Low-Bandwidth Discipline: Zero heavy blurs, zero decorative raster textures; relies on CSS tokens, inline SVG/TopoJSON maps, and system-friendly web fonts."
+    ],
+    "rules": [
+      {
+        "name": "The Reserved Grade Spectrum Rule",
+        "body": "Grade greens, teals, ambers, and reds (--grade-five through --grade-two) are reserved strictly for 5-point assessment feedback and mastery reporting; ingestion and workflow statuses stay in cobalt, muted stone, and vermilion.",
+        "section": "colors"
+      },
+      {
+        "name": "The Flat Plate & Vermilion Rule",
+        "body": "Surfaces carry zero drop shadows; depth and stage hierarchy come strictly from canvas-to-surface tone shifts, 1px hairline borders, and a 4px vermilion rule anchoring the navigation rail and 16:9 projection plates.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Redundant Shape-and-Hue Rule",
+        "body": "Every Kahoot-style answer tile pairs its fill token (--choice-a through --choice-d) with a distinct geometric SVG mark so classroom projection and color-vision differences never depend on hue alone.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do ensure every new component defines explicit Light and Dark theme CSS variables and passes WCAG AA contrast (>=4.5:1 for body text).",
+      "Do test all headings, badges, and buttons with Kyrgyz Cyrillic characters (Ө, ө, Ү, ү, Ң, ң) to prevent clipping or font fallback mismatches.",
+      "Do keep textbook unit payloads lightweight (<300KB, WebP maps, inline SVG).",
+      "Do keep QrMatrix locked to #FFFDF9 paper and #12161C modules across both themes so projected classroom QR codes never invert and fail camera scanning.",
+      "Do gate stage and drawer animations behind prefers-reduced-motion (.oku-stage-enter, motion-reduce:open:animate-none) and preserve 44px minimum touch targets on coarse pointers (coarse:min-h-[44px])."
+    ],
+    "donts": [
+      "Don't use generic pure #FFFFFF + #2563EB SaaS styling or heavy drop shadows.",
+      "Don't hide original textbook page numbers (page_break); teachers and students rely on them for classroom alignment.",
+      "Don't repurpose --grade-five through --grade-two for generic UI status badges or render Kahoot answer tiles without their paired ChoiceShapeMark geometry."
+    ]
+  }
+}
